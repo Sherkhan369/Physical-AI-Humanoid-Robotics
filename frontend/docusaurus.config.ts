@@ -58,7 +58,7 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Physical AI: Bridging the Digital and Real Worlds through Robotics',
+      title: 'Physical AI Robotics',
       logo: {
         alt: 'My Site Logo',
         src: 'img/logo.svg',
@@ -68,7 +68,7 @@ const config: Config = {
           type: 'docSidebar',
           sidebarId: 'defaultSidebar',
           position: 'left',
-          label: 'Tutorial',
+          label: 'Modules',
         },
         {to: '/blog', label: 'Blog', position: 'left'},
         {
