@@ -1,0 +1,464 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Robotics Control with ROS 2: Actuation and Sensors
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+-   Understand the principles of robotic actuation and common motor interfaces.
+-   Integrate various sensor types into ROS 2 for perception and state estimation.
+-   Implement basic joint control using ROS 2 messages and topics.
+-   Visualize sensor data and robot states using Rviz and RQT tools.
+-   Understand the basics of PID control for robotic systems.
+-   Explore hardware abstraction layers for seamless robot interaction.
+
+## Core Theory
+
+### Robotic Actuation
+
+Robotic actuation refers to the process of converting energy into physical motion. Actuators are the components responsible for moving parts of a robot. In robotics, common types of actuators include electric motors (DC, stepper, servo), hydraulic cylinders, and pneumatic cylinders. The choice of actuator depends on factors such as required force, speed, precision, and power source.
+
+#### Electric Motors
+
+Electric motors are the most prevalent type of actuator in robotics due to their versatility, control precision, and efficiency.
+
+-   **DC Motors**: Simple, inexpensive, and provide continuous rotation. Speed is proportional to voltage, and torque is proportional to current. Often used with gearboxes to increase torque and reduce speed.
+-   **Stepper Motors**: Provide precise rotational control in discrete steps. Ideal for applications requiring exact positioning without feedback, but can lose steps under heavy loads or high speeds.
+-   **Servo Motors**: Combine a DC motor with a gearbox, position sensor (potentiometer, encoder), and control electronics. They are used for precise angular positioning and are common in robotic arms and manipulators.
+
+#### Motor Interfaces
+
+To control motors from a ROS 2 system, we need interfaces that bridge the digital commands from our control nodes to the physical motor drivers. This typically involves:
+
+-   **PWM (Pulse Width Modulation)**: A technique for controlling the average power delivered to an electrical device by varying the width of the pulses. Commonly used to control DC motor speed or servo motor position.
+-   **Serial Communication (UART, SPI, I2C)**: Digital communication protocols used to send commands and receive feedback from motor drivers or microcontrollers.
+-   **Encoder Feedback**: Encoders are sensors that provide information about the angular position or velocity of a motor shaft. This feedback is crucial for closed-loop control systems like PID controllers.
+
+### Sensor Integration
+
+Sensors are critical for robots to perceive their environment and their own internal state. Integrating sensors into ROS 2 involves reading data from hardware, formatting it into appropriate ROS 2 message types, and publishing it to relevant topics.
+
+Common types of sensors in robotics include:
+
+-   **Encoders**: Measure angular position and velocity of joints/wheels.
+-   **IMUs (Inertial Measurement Units)**: Provide data on orientation, angular velocity, and linear acceleration (e.g., `sensor_msgs/Imu`).
+-   **Lidar (Light Detection and Ranging)**: Provides 2D or 3D point cloud data for mapping and obstacle detection (e.g., `sensor_msgs/LaserScan`, `sensor_msgs/PointCloud2`).
+-   **Cameras**: Capture visual information (RGB, depth, infrared) for object recognition, navigation, and human-robot interaction (e.g., `sensor_msgs/Image`, `sensor_msgs/CompressedImage`).
+-   **Force/Torque Sensors**: Measure forces and torques applied to robot end-effectors, crucial for compliant manipulation (e.g., `geometry_msgs/WrenchStamped`).
+
+#### Sensor Data Flow in ROS 2
+
+A typical sensor integration workflow in ROS 2 involves:
+
+1.  **Hardware Interface**: A low-level driver (often running on an embedded system or dedicated microcontroller) reads raw data from the sensor.
+2.  **ROS 2 Node**: A ROS 2 node is developed to interface with this driver. It reads the raw sensor data, converts it into a standard ROS 2 message type, and publishes it to a designated topic.
+3.  **Data Processing**: Other ROS 2 nodes (e.g., perception, localization) subscribe to these sensor data topics, process the information, and publish higher-level insights or control commands.
+
+<div align="center">
+  <img src="https://www.example.com/sensor_data_flow_diagram.png" alt="ROS 2 Sensor Data Flow" width="600" />
+  <em>Figure 1.5: Simplified ROS 2 Sensor Data Flow.</em>
+</div>
+
+### Joint Control with ROS 2
+
+Controlling a robot's joints (e.g., a robotic arm or mobile robot wheels) often involves sending target positions, velocities, or efforts to the actuators. ROS 2 provides standardized messages for this purpose, commonly through `sensor_msgs/JointState` (for reading joint states) and custom messages or interfaces for commanding specific joints.
+
+#### Example: Simple Joint Position Control
+
+A common approach is to have a control node publish `std_msgs/Float64` (or similar primitive type) messages to a topic associated with a specific joint. A low-level joint controller (which might be another ROS 2 node or embedded firmware) subscribes to this topic and translates the desired value into motor commands.
+
+Consider a simulated robot arm with a single rotating joint. A control node could publish desired joint angles to a topic like `/joint1_position_controller/command`. The joint controller then ensures the physical (or simulated) joint moves to that position.
+
+### Code Example 1.3.1: Controlling a Simulated Joint
+
+This example demonstrates how to control a simulated joint in a ROS 2 environment. We will create a simple ROS 2 node that publishes a desired joint position to a topic that a simulated robot controller (e.g., in Gazebo or Rviz with `joint_state_publisher_gui`) can subscribe to. For simplicity, we'll assume a single revolute joint that we want to move back and forth.
+
+#### 1.3.1.1 Joint Command Publisher Node (`joint_commander.py`)
+
+This node will publish `std_msgs/Float64` messages to a topic that a joint controller is listening to. We'll simulate a sinusoidal motion.
+
+```python
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Float64
+import math
+
+
+class JointCommander(Node):
+
+    def __init__(self):
+        super().__init__('joint_commander')
+        self.publisher_ = self.create_publisher(Float64, '/joint_position_controller/commands', 10)
+        self.timer_period = 0.05  # seconds
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
+        self.angle = 0.0
+        self.amplitude = 1.0 # Radians
+        self.frequency = 0.5 # Hz
+
+    def timer_callback(self):
+        msg = Float64()
+        # Generate a sinusoidal joint position command
+        self.angle = self.amplitude * math.sin(2 * math.pi * self.frequency * self.get_clock().now().nanoseconds / 1e9)
+        msg.data = self.angle
+        self.publisher_.publish(msg)
+        self.get_logger().info(f'Publishing joint command: {msg.data:.2f} radians')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    joint_commander = JointCommander()
+    rclpy.spin(joint_commander)
+    joint_commander.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.3.1.2 Running the Example
+
+To run this example, you would need a simulated robot environment (e.g., Gazebo) with a `ros2_control` setup that includes a `JointPositionController` configured for your target joint, listening to the `/joint_position_controller/commands` topic. Alternatively, for a quick visualization, you can use `joint_state_publisher_gui` in Rviz with a simple URDF model.
+
+**Simplified steps (assuming `my_ros2_package` exists and is sourced):**
+
+1.  **Place the Python file**: Place `joint_commander.py` in `my_ros2_package/my_ros2_package/`.
+2.  **Update `setup.py`**: Add the new node to the `entry_points` in `my_ros2_package/setup.py`:
+    ```python
+    entry_points={
+        'console_scripts': [
+            # ... existing entries ...
+            'joint_commander = my_ros2_package.joint_commander:main',
+        ],
+    },
+    ```
+3.  **Rebuild the package** (if you modified `setup.py`):
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+4.  **Source the setup files**:
+    ```bash
+    source install/setup.bash
+    ```
+5.  **Run the joint commander node**:
+    ```bash
+    ros2 run my_ros2_package joint_commander
+    ```
+6.  **In a separate terminal, if you have a `ros2_control` setup with a joint position controller**: You would typically launch your robot's simulation or Rviz setup that includes the joint controller.
+    
+    **For simple visualization without a full simulation, using `joint_state_publisher_gui` (if available and configured for your URDF)**:
+    ```bash
+    ros2 launch urdf_tutorial display.launch.py model:=<path_to_your_urdf.urdf>
+    ```
+    (Note: This usually requires specific configuration for `joint_state_publisher_gui` to subscribe to the command topic, which is beyond a simple example here. The primary focus is the publisher node.)
+
+**Expected behavior**: The `joint_commander` node will continuously publish joint position commands. In a properly configured simulation, you would observe the joint moving sinusoidally.
+
+### Code Example 1.3.2: Reading Simulated Sensor Data (LaserScan)
+
+This example demonstrates how to create a ROS 2 node that simulates a laser scanner and publishes `sensor_msgs/LaserScan` messages. Another node will subscribe to these messages and print some basic information.
+
+#### 1.3.2.1 Simulated Laser Scan Publisher Node (`sim_laser_publisher.py`)
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Header
+import math
+
+
+class SimulatedLaserPublisher(Node):
+
+    def __init__(self):
+        super().__init__('simulated_laser_publisher')
+        self.publisher_ = self.create_publisher(LaserScan, 'scan', 10)
+        self.timer_period = 0.1  # seconds
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
+        self.angle_min = -math.pi / 2 # -90 degrees
+        self.angle_max = math.pi / 2  # +90 degrees
+        self.angle_increment = math.pi / 180 # 1 degree increment
+        self.range_min = 0.1
+        self.range_max = 10.0
+        self.num_readings = int((self.angle_max - self.angle_min) / self.angle_increment)
+
+    def timer_callback(self):
+        msg = LaserScan()
+        msg.header = Header()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'laser_frame'
+
+        msg.angle_min = self.angle_min
+        msg.angle_max = self.angle_max
+        msg.angle_increment = self.angle_increment
+        msg.time_increment = 0.0 # Not used for fixed scans
+        msg.scan_time = self.timer_period
+        msg.range_min = self.range_min
+        msg.range_max = self.range_max
+
+        # Simulate a simple obstacle in front
+        ranges = []
+        for i in range(self.num_readings):
+            angle = self.angle_min + i * self.angle_increment
+            # Simulate a wall at 2m, with some noise
+            if -math.pi/4 < angle < math.pi/4:
+                ranges.append(2.0 + math.sin(self.get_clock().now().nanoseconds / 1e9) * 0.1)
+            else:
+                ranges.append(float('inf')) # No obstacle
+        msg.ranges = ranges
+
+        self.publisher_.publish(msg)
+        self.get_logger().info(f'Publishing LaserScan with {len(msg.ranges)} readings')
+
+def main(args=None):
+    rclpy.init(args=args)
+    simulated_laser_publisher = SimulatedLaserPublisher()
+    rclpy.spin(simulated_laser_publisher)
+    simulated_laser_publisher.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.3.2.2 Laser Scan Subscriber Node (`laser_data_reader.py`)
+
+```python
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
+
+
+class LaserDataReader(Node):
+
+    def __init__(self):
+        super().__init__('laser_data_reader')
+        self.subscription = self.create_subscription(
+            LaserScan,
+            'scan',
+            self.listener_callback,
+            10)
+        self.subscription  # prevent unused variable warning
+
+    def listener_callback(self, msg):
+        # Get the minimum range in the scan
+        min_range = min(filter(lambda x: x > msg.range_min, msg.ranges))
+        self.get_logger().info(f'Received LaserScan from {msg.header.frame_id}. Min range: {min_range:.2f}m')
+
+def main(args=None):
+    rclpy.init(args=args)
+    laser_data_reader = LaserDataReader()
+    rclpy.spin(laser_data_reader)
+    laser_data_reader.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.3.2.3 Running the Example
+
+1.  **Place the Python files**: Place `sim_laser_publisher.py` and `laser_data_reader.py` in `my_ros2_package/my_ros2_package/`.
+2.  **Update `setup.py`**: Add the new nodes to the `entry_points` in `my_ros2_package/setup.py`:
+    ```python
+    entry_points={
+        'console_scripts': [
+            # ... existing entries ...
+            'sim_laser_publisher = my_ros2_package.sim_laser_publisher:main',
+            'laser_data_reader = my_ros2_package.laser_data_reader:main',
+        ],
+    },
+    ```
+3.  **Rebuild the package**:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+4.  **Source the setup files**:
+    ```bash
+    source install/setup.bash
+    ```
+5.  **Run the simulated laser publisher**: In the first terminal:
+    ```bash
+    ros2 run my_ros2_package sim_laser_publisher
+    ```
+6.  **Run the laser data reader**: In a second terminal:
+    ```bash
+    ros2 run my_ros2_package laser_data_reader
+    ```
+
+You will observe the publisher sending `LaserScan` messages, and the subscriber logging the minimum range detected, simulating basic obstacle detection.
+
+### Code Example 1.3.3: Simple PID Controller for Joint Velocity
+
+This example demonstrates a basic PID (Proportional-Integral-Derivative) controller implemented in a ROS 2 node to regulate a simulated joint's velocity. The PID controller will try to match a target velocity by adjusting a command signal.
+
+#### 1.3.3.1 PID Controller Node (`pid_controller.py`)
+
+This node subscribes to a `Float64` topic for current joint velocity, another `Float64` topic for target velocity, and publishes `Float64` commands to a motor. For simplicity, we'll simulate the joint velocity internally.
+
+```python
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Float64
+
+
+class PIDController(Node):
+
+    def __init__(self):
+        super().__init__('pid_controller')
+
+        # Declare PID gains as parameters
+        self.declare_parameter('kp', 0.5)
+        self.declare_parameter('ki', 0.01)
+        self.declare_parameter('kd', 0.1)
+
+        self.kp = self.get_parameter('kp').value
+        self.ki = self.get_parameter('ki').value
+        self.kd = self.get_parameter('kd').value
+
+        self.get_logger().info(f'PID Gains: Kp={self.kp}, Ki={self.ki}, Kd={self.kd}')
+
+        self.target_velocity = 0.0
+        self.current_velocity = 0.0 # Simulated current velocity
+
+        self.error_sum = 0.0
+        self.last_error = 0.0
+        self.last_time = self.get_clock().now().nanoseconds / 1e9
+
+        self.velocity_subscriber = self.create_subscription(
+            Float64,
+            '/joint_velocity/feedback',
+            self.velocity_feedback_callback,
+            10)
+        self.target_velocity_subscriber = self.create_subscription(
+            Float64,
+            '/joint_velocity/target',
+            self.target_velocity_callback,
+            10)
+        self.motor_command_publisher = self.create_publisher(Float64, '/motor_commands', 10)
+
+        self.timer_period = 0.01 # 100 Hz control loop
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
+
+    def velocity_feedback_callback(self, msg):
+        self.current_velocity = msg.data
+
+    def target_velocity_callback(self, msg):
+        self.target_velocity = msg.data
+        self.get_logger().info(f'New target velocity: {self.target_velocity:.2f}')
+
+    def timer_callback(self):
+        current_time = self.get_clock().now().nanoseconds / 1e9
+        dt = current_time - self.last_time
+        self.last_time = current_time
+
+        error = self.target_velocity - self.current_velocity
+        self.error_sum += error * dt
+        error_derivative = (error - self.last_error) / dt if dt > 0 else 0.0
+        self.last_error = error
+
+        # PID calculation
+        output = self.kp * error + self.ki * self.error_sum + self.kd * error_derivative
+
+        # Simulate motor response (simplified)
+        # In a real system, 'output' would go to a motor driver
+        # Here, we update current_velocity based on output for simulation
+        self.current_velocity += output * dt * 0.1 # Some arbitrary gain for simulation
+        
+        # Publish motor command (e.g., effort, PWM, voltage)
+        cmd_msg = Float64()
+        cmd_msg.data = output
+        self.motor_command_publisher.publish(cmd_msg)
+        self.get_logger().info(f'Target: {self.target_velocity:.2f}, Current: {self.current_velocity:.2f}, Cmd: {output:.2f}')
+
+def main(args=None):
+    rclpy.init(args=args)
+    pid_controller = PIDController()
+    rclpy.spin(pid_controller)
+    pid_controller.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.3.3.2 Running the Example
+
+This example requires three components: the PID controller node, a node to publish simulated velocity feedback (or actual sensor data), and a node to set target velocities.
+
+**Simplified steps (assuming `my_ros2_package` exists and is sourced):**
+
+1.  **Place the Python file**: Place `pid_controller.py` in `my_ros2_package/my_ros2_package/`.
+2.  **Update `setup.py`**: Add the new node to the `entry_points`:
+    ```python
+    entry_points={
+        'console_scripts': [
+            # ... existing entries ...
+            'pid_controller = my_ros2_package.pid_controller:main',
+        ],
+    },
+    ```
+3.  **Rebuild the package**:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+4.  **Source the setup files**:
+    ```bash
+    source install/setup.bash
+    ```
+5.  **Run the PID controller node**: In the first terminal:
+    ```bash
+    ros2 run my_ros2_package pid_controller
+    ```
+6.  **Set a target velocity**: In a second terminal, publish a target velocity:
+    ```bash
+    ros2 topic pub --once /joint_velocity/target std_msgs/msg/Float64 "{data: 1.5}"
+    ```
+    You can also publish continuous target velocities from another node.
+
+**Expected behavior**: The PID controller will continuously log its internal state and published motor commands. You should observe `current_velocity` converging towards `target_velocity`. You can experiment with different Kp, Ki, Kd gains (set as parameters) to see their effect on the control performance.
+
+## Hands-on Exercises
+
+### Exercise 1.3.1: Implement a Joint Controller
+
+**Goal**: Create a ROS 2 node that acts as a simple joint velocity controller for a simulated wheel. The node should subscribe to a desired velocity command (e.g., `std_msgs/Float64`) and publish a simulated current velocity based on a basic physics model (e.g., applying a force proportional to the command).
+
+**Expected Output**: When you publish a velocity command, the simulated current velocity should gradually change towards the target.
+
+1.  **Create `wheel_velocity_controller.py`**: Implement a ROS 2 node that:
+    -   Subscribes to `/wheel_velocity/command` (type `std_msgs/Float64`).
+    -   Maintains an internal `current_wheel_velocity` state.
+    -   Publishes `current_wheel_velocity` to `/wheel_velocity/feedback` (type `std_msgs/Float64`).
+    -   In a timer callback, update `current_wheel_velocity` to slowly move towards the command velocity, simulating acceleration/deceleration.
+2.  **Update `setup.py`**: Add an entry point for `wheel_velocity_controller.py`.
+3.  **Build your workspace**.
+4.  **Run the `wheel_velocity_controller` node**.
+5.  **Test with `ros2 topic pub`**: Publish different `Float64` values to `/wheel_velocity/command` and observe `current_wheel_velocity` feedback using `ros2 topic echo /wheel_velocity/feedback`.
+
+### Exercise 1.3.2: Visualize Sensor Data in Rviz
+
+**Goal**: Extend the `sim_laser_publisher.py` from Code Example 1.3.2 to visualize its published `LaserScan` data in Rviz. This will involve setting up Rviz to display the laser scan and ensuring the `laser_frame` is properly configured.
+
+**Expected Output**: A real-time 2D representation of the simulated laser scan data should appear in Rviz, showing the simulated obstacle.
+
+1.  **Ensure `sim_laser_publisher.py` is running**: Start the simulated laser publisher node.
+2.  **Launch Rviz**: Open a new terminal and launch Rviz:
+    ```bash
+    rviz2
+    ```
+3.  **Configure Rviz**: In the Rviz window:
+    -   In the 'Displays' panel, click 'Add' and choose 'LaserScan' under 'By display type'. Click 'OK'.
+    -   Set the 'Topic' for the LaserScan display to `/scan`.
+    -   Set the 'Fixed Frame' to `laser_frame` (this is crucial for Rviz to know where to display the data relative to).
+    -   You might need a `static_transform_publisher` to provide a `laser_frame` to `base_link` (or `odom`) transform if you don't have a full URDF. For a quick test, you can simply run:
+        ```bash
+        ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 1 base_link laser_frame
+        ```
+        (This publishes a static identity transform from `base_link` to `laser_frame`.)
+4.  **Observe the visualization**: You should see the simulated laser scan data (the wall at 2m) appearing in the Rviz 3D view.

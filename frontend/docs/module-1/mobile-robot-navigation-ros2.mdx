@@ -1,0 +1,365 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Mobile Robot Navigation with ROS 2
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+-   Understand the core components of the ROS 2 Navigation Stack (`Nav2`).
+-   Differentiate between various localization techniques (e.g., AMCL).
+-   Explain path planning algorithms and their role in autonomous navigation.
+-   Implement basic teleoperation for a mobile robot.
+-   Configure and launch a mobile robot for autonomous navigation in a simulated environment.
+-   Understand basic obstacle avoidance strategies.
+-   Utilize `robot_localization` for fusing sensor data for robust pose estimation.
+
+## Core Theory
+
+### Introduction to Mobile Robot Navigation
+
+Autonomous mobile robot navigation is a cornerstone of modern robotics, enabling robots to move intelligently and safely through environments without constant human intervention. This involves several complex tasks, including perceiving the environment, knowing the robot's current location, planning a path to a goal, and executing that path while avoiding obstacles. ROS 2 provides a powerful and modular navigation stack, `Nav2`, to facilitate these capabilities.
+
+### The ROS 2 Navigation Stack (`Nav2`)
+
+`Nav2` is the official navigation stack for ROS 2. It is a collection of modular packages that work together to enable a robot to autonomously navigate from a starting point to a goal location, avoiding obstacles along the way. Unlike its ROS 1 predecessor (`navigation stack`), `Nav2` is built on a behavior tree-based architecture, offering greater flexibility and easier customization of navigation behaviors.
+
+Key components of `Nav2` include:
+
+1.  **Map Server**: Manages and provides the static map of the environment (e.g., Occupancy Grid Map).
+2.  **AMCL (Adaptive Monte Carlo Localization)**: A probabilistic localization system that uses a particle filter to estimate the robot's pose (position and orientation) within a known map.
+3.  **Controller Server**: Executes local path planning and controls the robot's actuators to follow the planned path while avoiding immediate obstacles (e.g., DWB - Directed Walking Behavior, TEB - Timed Elastic Band).
+4.  **Planner Server**: Computes global paths from the robot's current location to the goal location (e.g., A*, Dijkstra, Theta*).
+5.  **Behavior Tree**: Orchestrates the entire navigation process, defining the sequence of actions, conditions, and fallbacks for autonomous behavior.
+6.  **BT Navigator**: A top-level node that uses a behavior tree to manage the lifecycle of the navigation tasks.
+
+<div align="center">
+  <img src="https://www.example.com/nav2_architecture.png" alt="Nav2 Architecture Overview" width="700" />
+  <em>Figure 1.7: Overview of the ROS 2 Navigation Stack (`Nav2`) Architecture.</em>
+</div>
+
+### Localization
+
+Localization is the process of determining a robot's pose (position and orientation) within a given map. Accurate localization is fundamental for effective navigation. `Nav2` primarily uses AMCL (Adaptive Monte Carlo Localization) for 2D localization in static environments.
+
+#### AMCL (Adaptive Monte Carlo Localization)
+
+AMCL is a probabilistic localization algorithm for a 2D mobile robot against a known map. It uses a particle filter to track the pose of a robot. Particles represent possible poses of the robot in the map. As the robot moves and receives sensor data (e.g., laser scans), the likelihood of each particle's pose is updated, and particles that are inconsistent with the sensor readings are gradually culled, leading to a more accurate pose estimate.
+
+**Inputs to AMCL**: Laser scan data, Odometry data, and a static Map.
+**Output from AMCL**: The robot's estimated pose (transform from `map` frame to `odom` frame, and subsequently `odom` to `base_link`).
+
+### Path Planning
+
+Path planning involves computing a collision-free trajectory for the robot from its current location to a desired goal. In `Nav2`, path planning is typically divided into two levels:
+
+1.  **Global Path Planning**: Generates a long-term, feasible path from the start to the goal on the static map, considering known obstacles. This path is often computed once per goal.
+    -   **Algorithms**: A* (A-star), Dijkstra, and Theta* are common global planners.
+2.  **Local Path Planning (Motion Planning)**: Generates short-term, dynamically feasible trajectories that the robot can follow, while continuously reacting to new sensor readings and unexpected obstacles. This happens at a high frequency.
+    -   **Algorithms**: DWB (Dynamic Window Approach), TEB (Timed Elastic Band), and Trajectory Rollout are popular local planners.
+
+The global planner provides a general route, and the local planner refines this route in real-time based on the robot's kinematics and dynamic obstacles.
+
+### Obstacle Avoidance
+
+Obstacle avoidance is the robot's ability to detect and steer clear of objects in its path. This is primarily handled by the local planner and controller, which utilize sensor data (e.g., laser scans, depth cameras) to identify nearby obstacles and adjust the robot's trajectory accordingly. `Nav2` uses costmaps (local and global) to represent the occupancy and cost of traversing different areas of the environment, guiding the planners and controllers to avoid high-cost (obstacle-filled) regions.
+
+<div align="center">
+  <img src="https://www.example.com/nav2_costmap.png" alt="Nav2 Costmap Example" width="600" />
+  <em>Figure 1.8: An example of a Nav2 Costmap, showing obstacles and inflated costs.</em>
+</div>
+
+### Code Example 1.4.1: Simple Keyboard Teleoperation Node
+
+This example demonstrates a basic keyboard teleoperation node for a mobile robot. The node reads keyboard inputs and publishes `geometry_msgs/Twist` messages to the `/cmd_vel` topic, which is a standard way to command velocities to a mobile robot base.
+
+#### 1.4.1.1 Teleoperation Node (`teleop_keyboard.py`)
+
+This Python script uses the `curses` library (typically available on Linux/macOS, requires `pip install windows-curses` on Windows) to read keyboard input without blocking the terminal.
+
+```python
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+import sys
+import select
+import tty
+import termios
+
+# Mapping keyboard keys to linear and angular velocities
+LIN_VEL = 0.2  # m/s
+ANG_VEL = 0.5  # rad/s
+
+msg = """ 
+Reading from the keyboard!
+---------------------------
+Moving around:
+   q    w    e
+   a    s    d
+   z    x    c
+
+For Holonomic mode (strafing), use q, e, z, c
+
+w/x : increase/decrease linear velocity 
+a/d : increase/decrease angular velocity 
+
+s : stop
+
+CTRL-C to quit
+"""
+
+moveBindings = {
+    'w': (1, 0, 0, 0),
+    'x': (-1, 0, 0, 0),
+    'a': (0, 0, 0, 1),
+    'd': (0, 0, 0, -1),
+    'q': (1, 0, 0, 1),
+    'e': (1, 0, 0, -1),
+    'z': (-1, 0, 0, 1),
+    'c': (-1, 0, 0, -1),
+}
+
+
+def getKey(settings):
+    tty.setraw(sys.stdin.fileno())
+    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+    if rlist:
+        key = sys.stdin.read(1)
+    else:
+        key = ''
+
+    termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, settings)
+    return key
+
+
+class TeleopKeyboard(Node):
+
+    def __init__(self):
+        super().__init__('teleop_keyboard')
+        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.timer_period = 0.1  # seconds
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
+        self.linear_vel = 0.0
+        self.angular_vel = 0.0
+        self.settings = termios.tcgetattr(sys.stdin)
+        print(msg)
+
+    def timer_callback(self):
+        key = getKey(self.settings)
+        twist = Twist()
+
+        if key in moveBindings.keys():
+            self.linear_vel = moveBindings[key][0] * LIN_VEL
+            self.angular_vel = moveBindings[key][3] * ANG_VEL
+        elif key == 's':
+            self.linear_vel = 0.0
+            self.angular_vel = 0.0
+        elif key == '\x03':  # Ctrl+C
+            self.get_logger().info('Exiting teleop node.')
+            rclpy.shutdown()
+            return
+        
+        twist.linear.x = self.linear_vel
+        twist.angular.z = self.angular_vel
+        self.publisher_.publish(twist)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    teleop_node = TeleopKeyboard()
+    try:
+        rclpy.spin(teleop_node)
+    except SystemExit:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, teleop_node.settings)
+        pass # ROS 2 will handle shutdown
+
+    teleop_node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.4.1.2 Running the Example
+
+1.  **Install `windows-curses` (if on Windows)**:
+    ```bash
+    pip install windows-curses
+    ```
+2.  **Place the Python file**: Place `teleop_keyboard.py` in `my_ros2_package/my_ros2_package/`.
+3.  **Update `setup.py`**: Add the new node to the `entry_points` in `my_ros2_package/setup.py`:
+    ```python
+    entry_points={
+        'console_scripts': [
+            # ... existing entries ...
+            'teleop_keyboard = my_ros2_package.teleop_keyboard:main',
+        ],
+    },
+    ```
+4.  **Rebuild the package**:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+5.  **Source the setup files**:
+    ```bash
+    source install/setup.bash
+    ```
+6.  **Run the teleoperation node**: In a terminal:
+    ```bash
+    ros2 run my_ros2_package teleop_keyboard
+    ```
+7.  **In a separate terminal, monitor `/cmd_vel`**: You can use `ros2 topic echo /cmd_vel` to see the `Twist` messages being published as you press keys.
+
+**Expected behavior**: As you press the `w`, `a`, `s`, `d` keys (and `q`, `e`, `z`, `c` for holonomic movement if your robot supports it), the `teleop_keyboard` node will publish `Twist` messages to `/cmd_vel`. If you have a simulated robot subscribed to `/cmd_vel`, it will move accordingly.
+
+### Code Example 1.4.2: Simple Waypoint Navigation with Nav2 (Goal Publisher)
+
+This example demonstrates how to send navigation goals to the `Nav2` stack using a ROS 2 Python node. We will create a node that publishes a series of `geometry_msgs/PoseStamped` messages to the `/goal_pose` topic, effectively commanding the robot to navigate to predefined waypoints.
+
+**Prerequisites**: To run this example, you need a fully configured `Nav2` stack running with a simulated robot (e.g., in Gazebo with `turtlebot3_navigation` or similar). This includes a map, AMCL, global and local planners, and a controller.
+
+#### 1.4.2.1 Waypoint Publisher Node (`waypoint_publisher.py`)
+
+```python
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Path
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+
+
+class WaypointPublisher(Node):
+
+    def __init__(self):
+        super().__init__('waypoint_publisher')
+        qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        self.goal_publisher_ = self.create_publisher(PoseStamped, 'goal_pose', qos_profile)
+        self.timer_period = 5.0  # seconds between goals
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
+
+        self.waypoints = [
+            # Define a series of waypoints (x, y, yaw in radians)
+            (0.5, 0.0, 0.0), # Example: 0.5m forward
+            (0.5, 0.5, 1.57), # Example: 0.5m forward, 0.5m left, turn 90 deg
+            (0.0, 0.5, 3.14), # Example: 0.5m left, turn 180 deg
+            (0.0, 0.0, -1.57), # Example: Return to origin facing right
+        ]
+        self.current_waypoint_index = 0
+        self.get_logger().info('Waypoint Publisher Node Started.')
+
+    def timer_callback(self):
+        if self.current_waypoint_index >= len(self.waypoints):
+            self.get_logger().info('All waypoints sent. Shutting down.')
+            self.timer.cancel()
+            rclpy.shutdown()
+            return
+
+        x, y, yaw = self.waypoints[self.current_waypoint_index]
+
+        goal_pose = PoseStamped()
+        goal_pose.header.frame_id = 'map'  # Or whatever your global frame is
+        goal_pose.pose.position.x = x
+        goal_pose.pose.position.y = y
+        goal_pose.pose.position.z = 0.0
+
+        # Convert yaw to quaternion (simplified for 2D)
+        goal_pose.pose.orientation.x = 0.0
+        goal_pose.pose.orientation.y = 0.0
+        goal_pose.pose.orientation.z = math.sin(yaw / 2)
+        goal_pose.pose.orientation.w = math.cos(yaw / 2)
+
+        self.goal_publisher_.publish(goal_pose)
+        self.get_logger().info(f'Sending goal: ({x:.2f}, {y:.2f}, {yaw:.2f} rad)')
+        self.current_waypoint_index += 1
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    waypoint_publisher = WaypointPublisher()
+    rclpy.spin(waypoint_publisher)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.4.2.2 Running the Example
+
+1.  **Ensure Nav2 is running**: Start your simulated robot with the full `Nav2` stack (e.g., TurtleBot3 in Gazebo with `nav2_bringup`):
+    ```bash
+    ros2 launch turtlebot3_navigation2 navigation2.launch.py use_sim_time:=True map:=<path_to_your_map.yaml>
+    ```
+2.  **Source your workspace**: (If `waypoint_publisher.py` is in `my_ros2_package`)
+    ```bash
+    source install/setup.bash
+    ```
+3.  **Place the Python file**: Place `waypoint_publisher.py` in `my_ros2_package/my_ros2_package/`.
+4.  **Update `setup.py`**: Add the new node to the `entry_points` in `my_ros2_package/setup.py`:
+    ```python
+    entry_points={
+        'console_scripts': [
+            # ... existing entries ...
+            'waypoint_publisher = my_ros2_package.waypoint_publisher:main',
+        ],
+    },
+    ```
+5.  **Rebuild the package**:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+6.  **Run the waypoint publisher node**: In a terminal:
+    ```bash
+    ros2 run my_ros2_package waypoint_publisher
+    ```
+
+**Expected behavior**: The robot in your simulation (e.g., Gazebo) will receive a series of goals. `Nav2` will then plan and execute paths to each waypoint in sequence. You should observe the robot moving autonomously through the environment.
+
+## Hands-on Exercises
+
+### Exercise 1.4.1: Implement a Basic Teleoperation System
+
+**Goal**: Take the `teleop_keyboard.py` from Code Example 1.4.1 and modify it to include speed scaling. The user should be able to increase or decrease the linear and angular velocities using dedicated keys (e.g., '+' and '-').
+
+**Expected Output**: The robot's linear and angular speeds should respond to the speed scaling keys, changing incrementally.
+
+1.  **Modify `teleop_keyboard.py`**:
+    -   Introduce a counter that, every 10 messages, switches the `timer_period` between 0.1 seconds (fast) and 1.0 second (slow).
+    -   Every 5 messages, prepend the string "Urgent: " to the message data.
+2.  **Update `msg` display**: Modify the `msg` string to inform the user about the new speed scaling keys.
+3.  **Rebuild and run** the teleoperation node. Test the speed scaling functionality.
+
+### Exercise 1.4.2: Navigate a Simulated Robot to a Goal
+
+**Goal**: Launch a simulated mobile robot with the `Nav2` stack and send it a single navigation goal using the `waypoint_publisher.py` (or manually via Rviz 2). Verify that the robot successfully navigates to the target.
+
+**Expected Output**: The simulated robot should move from its starting position to the target goal, avoiding any obstacles in its path, and finally report successful arrival.
+
+1.  **Launch a simulated robot with Nav2**: This typically involves a launch file from a package like `turtlebot3_navigation2`. Ensure a map is loaded and AMCL, planners, and controllers are active.
+    ```bash
+    ros2 launch turtlebot3_navigation2 navigation2.launch.py use_sim_time:=True map:=<path_to_your_map.yaml>
+    ```
+2.  **Initialize AMCL pose**: In Rviz 2, use the "2D Pose Estimate" tool to give `Nav2` an initial estimate of the robot's position on the map. This is crucial for AMCL to localize the robot.
+3.  **Run `waypoint_publisher.py` (from Code Example 1.4.2)**: Start your waypoint publisher node.
+    ```bash
+    ros2 run my_ros2_package waypoint_publisher
+    ```
+    (Make sure `waypoint_publisher.py` is configured to send only one goal for this exercise, or send a goal manually from Rviz 2 using the "2D Goal Pose" tool.)
+4.  **Observe navigation**: Monitor the robot's movement in the simulation and its path in Rviz 2. The `Nav2` stack will publish planning and control messages. You should see the robot move to the goal.
+
+## Summary & Further Reading
+
+### Summary
+
+This chapter provided an overview of mobile robot navigation with ROS 2, focusing on the `Nav2` stack. We covered key concepts such as localization (AMCL), global and local path planning, and obstacle avoidance. Practical examples demonstrated how to teleoperate a robot and send navigation goals, laying the groundwork for developing autonomous navigation capabilities.
+
+### Further Reading
+
+-   [1] Open Robotics, "Navigation2 Documentation," *ROS 2 Documentation*. Available: https://navigation.ros.org/
+-   [2] M. Y. e. a. P. S. S. S. a. R. J. R. B. P. T. Open Robotics, "Concepts - Understanding the Navigation2 Stack," *ROS 2 Documentation*. Available: https://docs.ros.org/en/jazzy/Concepts/Navigation2-Overview.html
+-   [3] S. Thrun, W. Burgard, and D. Fox, *Probabilistic Robotics*. MIT Press, 2005.

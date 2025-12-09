@@ -1,0 +1,10 @@
+{
+  "label": "Module 4: Vision-Language-Action (VLA)",
+  "position": 5,
+  "link": {
+    "type": "generated-index",
+    "title": "Module 4 Overview",
+    "description": "Integrate vision, language, and action for intelligent robots.",
+    "slug": "/module-4"
+  }
+}

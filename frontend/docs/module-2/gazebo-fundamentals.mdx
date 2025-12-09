@@ -1,0 +1,462 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Gazebo Simulation: Fundamentals and Robot Modeling (URDF/SDF)
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+-   Understand the core concepts and architecture of Gazebo simulation.
+-   Differentiate between URDF and SDF for robot and world modeling.
+-   Create a basic URDF model for a simple robotic arm or mobile robot.
+-   Launch and interact with robots in Gazebo.
+-   Integrate ROS 2 control with Gazebo simulated robots.
+-   Understand the role of plugins in extending Gazebo's functionality.
+-   Explain basic physics engine concepts within Gazebo.
+
+## Core Theory
+
+### Introduction to Robotic Simulation with Gazebo
+
+Robotic simulation is an indispensable tool in modern robotics development. It allows engineers and researchers to design, test, and debug robot software in a safe, cost-effective, and reproducible virtual environment before deploying it on physical hardware. Gazebo is one of the most widely used 3D dynamic simulators for robotics, offering robust physics simulation, realistic sensor modeling, and seamless integration with ROS and ROS 2.
+
+**Why use Gazebo?**
+
+-   **Safe Testing**: Test dangerous or expensive robot behaviors without risking damage to physical hardware or injury to personnel.
+-   **Rapid Prototyping**: Quickly iterate on robot designs and control algorithms.
+-   **Sensor Fidelity**: Simulate various sensors (cameras, LiDAR, IMUs) with configurable noise and characteristics.
+-   **Physics Engine**: Accurate modeling of rigid body dynamics, collisions, and friction.
+-   **ROS/ROS 2 Integration**: Built-in plugins and interfaces for easy communication with ROS 2 nodes.
+-   **Reproducibility**: Easily recreate scenarios for testing and comparison.
+
+### Gazebo Architecture and Core Concepts
+
+Gazebo is designed as a client-server architecture. The core components include:
+
+-   **Gazebo Server (`gzserver`)**: The physics engine, responsible for simulating the world, robot dynamics, sensor data generation, and processing physics updates.
+-   **Gazebo Client (`gzclient`)**: The graphical user interface (GUI) that allows users to visualize the simulation, interact with models, and inspect properties.
+-   **Physics Engines**: Gazebo supports various physics engines, including ODE (Open Dynamics Engine), Bullet, DART, and Simbody. These engines handle collision detection, rigid body dynamics, and joint constraints.
+-   **Plugins**: Gazebo's functionality can be extended through plugins, which are dynamically loaded libraries that can control models, simulate sensors, or interact with the physics engine. ROS 2 integration is often achieved through Gazebo plugins (e.g., `gazebo_ros_pkgs`).
+-   **Models**: Representations of objects in the simulation, including robots, furniture, and environmental features. Models are defined using SDF or URDF.
+-   **Worlds**: XML files that define the entire simulation environment, including models, lights, gravity, and physics properties.
+
+### Robot and World Modeling: URDF vs. SDF
+
+Defining robots and environments accurately is crucial for realistic simulation. ROS 2 and Gazebo use two primary XML-based formats for this purpose: URDF and SDF.
+
+#### URDF (Unified Robot Description Format)
+
+URDF is an XML format used in ROS for describing the kinematic and dynamic properties of a robot. It is designed to describe a *single* robot and its articulation. URDF is excellent for defining the robot's joints, links, sensors, and even its visual and collision properties. However, URDF cannot describe:
+
+-   Multiple robots in a scene.
+-   Environmental objects (walls, tables, etc.).
+-   Gravity or other world properties.
+-   Joint loops (e.g., a four-bar linkage).
+
+**Structure of a URDF file:**
+
+-   `<robot>`: The root element.
+-   `<link>`: Defines a rigid body with its inertial, visual, and collision properties.
+-   `<joint>`: Defines the kinematic and dynamic properties of a connection between two links (parent and child).
+-   `<material>`: Defines visual properties like color.
+-   `<gazebo>`: Special tags that can be embedded in a URDF to add Gazebo-specific properties or plugins.
+
+#### SDF (Simulation Description Format)
+
+SDF is an XML format that provides a more comprehensive description of objects and environments for simulators like Gazebo. It is designed to describe *everything* in a simulation, including robots, static objects, dynamic objects, lights, sensors, and environmental properties (gravity, atmospheric conditions). SDF is essentially a superset of URDF capabilities, meaning you can convert a URDF into an SDF, but not vice-versa without losing information.
+
+**Key advantages of SDF:**
+
+-   **World Description**: Can define entire worlds, including multiple robots and static elements.
+-   **Joint Loops**: Supports arbitrary joint graphs, enabling more complex robot mechanisms.
+-   **Nested Models**: Allows models to contain other models, useful for modular design.
+-   **Physics Parameters**: Defines properties like friction coefficients, damping, etc., directly.
+
+Most complex Gazebo simulations utilize SDF to define the entire world, often importing URDF files as robot models within the SDF structure. This combined approach leverages the strengths of both formats: URDF for detailed robot descriptions and SDF for comprehensive world modeling.
+
+<div align="center">
+  <img src="https://www.example.com/urdf_sdf_diagram.png" alt="URDF vs SDF" width="600" />
+  <em>Figure 2.1: Comparison of URDF and SDF modeling capabilities.</em>
+</div>
+
+### Code Example 2.1.1: Spawning a Model in Gazebo
+
+This example demonstrates how to programmatically spawn a model into a running Gazebo simulation using a ROS 2 Python node. We will spawn a simple box model. This requires the `gazebo_msgs` package.
+
+#### 2.1.1.1 Simple Box SDF Model (`box.sdf`)
+
+Create a file named `box.sdf` in your ROS 2 package (e.g., `my_ros2_package/models/box/model.sdf`):
+
+```xml
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="simple_box">
+    <link name="box_link">
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.166667</ixx>
+          <iyy>0.166667</iyy>
+          <izz>0.166667</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <box>
+            <size>0.2 0.2 0.2</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.0 0.0 1.0 1.0</ambient>
+          <diffuse>0.0 0.0 1.0 1.0</diffuse>
+          <specular>0.0 0.0 1.0 1.0</specular>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <box>
+            <size>0.2 0.2 0.2</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>
+```
+
+#### 2.1.1.2 Model Spawner Node (`spawn_box.py`)
+
+This node will use the `SpawnEntity` service from `gazebo_msgs` to spawn the `simple_box` model.
+
+```python
+import rclpy
+from rclpy.node import Node
+from gazebo_msgs.srv import SpawnEntity
+import os
+
+
+class SpawnBoxNode(Node):
+
+    def __init__(self):
+        super().__init__('spawn_box_node')
+        self.client = self.create_client(SpawnEntity, 'spawn_entity')
+
+        while not self.client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Service not available, waiting again...')
+
+        self.spawn_box()
+
+    def spawn_box(self):
+        request = SpawnEntity.Request()
+        request.name = 'my_spawned_box'
+        
+        # Path to the SDF model file
+        # Assuming box.sdf is in my_ros2_package/models/box/model.sdf
+        package_dir = os.path.dirname(os.path.abspath(__file__))
+        # Adjust path as necessary to point to your box.sdf location
+        sdf_path = os.path.join(package_dir, '..\', '..\', 'models\', 'box\', 'model.sdf')
+        
+        with open(sdf_path, 'r') as f:
+            request.xml = f.read()
+
+        # Set initial pose
+        request.initial_pose.position.x = 0.0
+        request.initial_pose.position.y = 0.0
+        request.initial_pose.position.z = 1.0
+
+        self.get_logger().info('Sending spawn request for my_spawned_box...')
+        self.future = self.client.call_async(request)
+        self.future.add_done_callback(self.spawn_callback)
+
+    def spawn_callback(self, future):
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info('Box spawned successfully!')
+            else:
+                self.get_logger().error(f'Failed to spawn box: {response.status_message}')
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    spawn_box_node = SpawnBoxNode()
+    rclpy.spin(spawn_box_node)
+    spawn_box_node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 2.1.1.3 Running the Example
+
+1.  **Launch Gazebo**: Start an empty Gazebo world (or any world you prefer):
+    ```bash
+    gazebo
+    # or if using ROS 2 launch system:
+    # ros2 launch gazebo_ros gazebo.launch.py empty_world:=true
+    ```
+2.  **Create ROS 2 package**: If you haven't already, create a package (e.g., `my_ros2_package`):
+    ```bash
+    ros2 pkg create --build-type ament_python my_ros2_package
+    ```
+3.  **Create model directory**: Create `my_ros2_package/models/box/` and place `model.sdf` inside it.
+4.  **Place the Python file**: Place `spawn_box.py` in `my_ros2_package/my_ros2_package/`.
+5.  **Update `setup.py`**: Add the new node to the `entry_points`:
+    ```python
+    entry_points={
+        'console_scripts': [
+            # ... existing entries ...
+            'spawn_box = my_ros2_package.spawn_box:main',
+        ],
+    },
+    ```
+6.  **Rebuild the package**:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+7.  **Source the setup files**:
+    ```bash
+    source install/setup.bash
+    ```
+8.  **Run the spawner node**: In a terminal:
+    ```bash
+    ros2 run my_ros2_package spawn_box
+    ```
+
+**Expected behavior**: An blue box named `my_spawned_box` should appear in your Gazebo simulation environment at the specified initial pose.
+
+### Code Example 2.1.2: Controlling a Gazebo Model via ROS 2
+
+This example demonstrates how to control a model's pose (position and orientation) in Gazebo using ROS 2 topics. We will publish `geometry_msgs/Pose` messages to Gazebo's `/model/my_spawned_box/cmd_pose` topic. This requires the `ros_gz_sim` package (previously `ros_gz_bridge`) and a running Gazebo simulation.
+
+**Prerequisites**: A Gazebo simulation must be running, and the `ros_gz_sim` bridge must be active to expose Gazebo's `/model/*/cmd_pose` topics as ROS 2 topics.
+
+#### 2.1.2.1 Pose Commander Node (`pose_commander.py`)
+
+This node will publish `geometry_msgs/Pose` messages to command the pose of a specific model in Gazebo. We'll make it move in a simple square pattern.
+
+```python
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Pose
+import math
+import time
+
+class PoseCommander(Node):
+
+    def __init__(self):
+        super().__init__('pose_commander')
+        self.publisher_ = self.create_publisher(Pose, '/model/my_spawned_box/cmd_pose', 10)
+        self.timer_period = 2.0  # seconds per waypoint
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
+
+        self.waypoints = [
+            (0.0, 0.0, 0.5, 0.0), # Start (x, y, z, yaw)
+            (1.0, 0.0, 0.5, 0.0), # Move forward 1m
+            (1.0, 1.0, 0.5, 1.57), # Move left 1m, turn 90 deg
+            (0.0, 1.0, 0.5, 3.14), # Move back 1m, turn 90 deg
+            (0.0, 0.0, 0.5, -1.57) # Move right 1m, turn -90 deg
+        ]
+        self.current_waypoint_index = 0
+        self.get_logger().info('Pose Commander Node Started.')
+
+    def timer_callback(self):
+        if self.current_waypoint_index >= len(self.waypoints):
+            self.get_logger().info('All waypoints sent. Shutting down.')
+            self.timer.cancel()
+            # Do not shutdown rclpy here if other nodes are running
+            return
+
+        x, y, z, yaw = self.waypoints[self.current_waypoint_index]
+
+        pose_msg = Pose()
+        pose_msg.position.x = x
+        pose_msg.position.y = y
+        pose_msg.position.z = z
+
+        # Convert yaw to quaternion (simplified for 2D orientation)
+        pose_msg.orientation.x = 0.0
+        pose_msg.orientation.y = 0.0
+        pose_msg.orientation.z = math.sin(yaw / 2)
+        pose_msg.orientation.w = math.cos(yaw / 2)
+
+        self.publisher_.publish(pose_msg)
+        self.get_logger().info(f'Sending pose: ({x:.2f}, {y:.2f}, {z:.2f}, Yaw: {yaw:.2f} rad)')
+        self.current_waypoint_index += 1
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    pose_commander = PoseCommander()
+    rclpy.spin(pose_commander)
+    pose_commander.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 2.1.2.2 Running the Example
+
+1.  **Launch Gazebo with `ros_gz_sim` bridge**: This typically involves a launch file that starts Gazebo and the necessary bridges. For example, to launch an empty Gazebo world with the ROS-Gazebo bridge:
+    ```bash
+    ros2 launch ros_gz_sim_demos gz_bridge.launch.py
+    # This launch file should start Gazebo and bridge /model/*/cmd_pose topics.
+    # Verify by checking topics: ros2 topic list | grep cmd_pose
+    ```
+    You might need to install `ros_gz_sim` and its dependencies (e.g., `sudo apt install ros-jazzy-ros-gz-sim`).
+
+2.  **Spawn a model (e.g., the `simple_box` from Code Example 2.1.1)**: Ensure the `my_spawned_box` model is present in Gazebo. You can use the `spawn_box.py` node or manually insert a model in the Gazebo GUI.
+
+3.  **Place the Python file**: Place `pose_commander.py` in your ROS 2 package (e.g., `my_ros2_package/my_ros2_package/`).
+
+4.  **Update `setup.py`**: Add the new node to the `entry_points` in `my_ros2_package/setup.py`:
+    ```python
+    entry_points={
+        'console_scripts': [
+            # ... existing entries ...
+            'pose_commander = my_ros2_package.pose_commander:main',
+        ],
+    },
+    ```
+
+5.  **Rebuild the package**:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+
+6.  **Source the setup files**:
+    ```bash
+    source install/setup.bash
+    ```
+
+7.  **Run the pose commander node**: In a terminal:
+    ```bash
+    ros2 run my_ros2_package pose_commander
+    ```
+
+**Expected behavior**: The `my_spawned_box` model in Gazebo should move through the predefined waypoints, demonstrating dynamic control of a simulated model via ROS 2 topics.
+
+### Diagram 2.2: URDF/SDF Structure
+
+```mermaid
+graph TD
+    A[Robot Description] --> B{URDF (.urdf)}
+    B --> C[Links (Rigid Bodies)]
+    B --> D[Joints (Connections)]
+    B --> E[Visual & Collision Properties]
+    B --> F[Sensors (via Gazebo Tags)]
+
+    G[World Description] --> H{SDF (.sdf)}
+    H --> I[Physics Properties (Gravity, etc.)]
+    H --> J[Lights]
+    H --> K[Ground Plane]
+    H --> L[Models (Robots, Objects)]
+    L -- Can include/import --> B
+
+    style B fill:#f9f,stroke:#333,stroke-width:2px
+    style H fill:#f9f,stroke:#333,stroke-width:2px
+```
+
+## Hands-on Exercise 2.1.1: Building a Simple URDF Robot
+
+**Goal**: Extend the basic SDF model to a simple URDF model with two links and one joint, and then spawn it in Gazebo. This exercise will reinforce your understanding of URDF structure and its integration into Gazebo.
+
+1.  **Create a new URDF file**:
+    Create a file named `simple_robot.urdf` in your ROS 2 package (e.g., `my_ros2_package/urdf/simple_robot.urdf`).
+
+    ```xml
+    <?xml version="1.0"?>
+    <robot name="simple_robot">
+      <link name="base_link">
+        <visual>
+          <geometry>
+            <box size="0.2 0.2 0.1"/>
+          </geometry>
+          <material name="blue">
+            <color rgba="0 0 0.8 1"/>
+          </material>
+        </visual>
+        <collision>
+          <geometry>
+            <box size="0.2 0.2 0.1"/>
+          </geometry>
+        </collision>
+        <inertial>
+          <mass value="0.5"/>
+          <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+        </inertial>
+      </link>
+
+      <link name="arm_link">
+        <visual>
+          <geometry>
+            <cylinder radius="0.02" length="0.3"/>
+          </geometry>
+          <material name="green">
+            <color rgba="0 0.8 0 1"/>
+          </material>
+        </visual>
+        <collision>
+          <geometry>
+            <cylinder radius="0.02" length="0.3"/>
+          </geometry>
+        </collision>
+        <inertial>
+          <mass value="0.2"/>
+          <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.0001"/>
+        </inertial>
+      </link>
+
+      <joint name="base_to_arm_joint" type="revolute">
+        <parent link="base_link"/>
+        <child link="arm_link"/>
+        <origin xyz="0 0 0.05" rpy="0 0 0"/>
+        <axis xyz="0 0 1"/>
+        <limit lower="-1.57" upper="1.57" effort="100" velocity="100"/>
+      </joint>
+
+      <gazebo reference="base_link">
+        <material>Gazebo/Blue</material>
+      </gazebo>
+
+      <gazebo reference="arm_link">
+        <material>Gazebo/Green</material>
+      </gazebo>
+    </robot>
+    ```
+
+2.  **Modify the spawner node**:
+    Adapt the `spawn_box.py` script (from Code Example 2.1.1) to instead spawn `simple_robot.urdf`. Remember to change `SpawnEntity.Request().xml` to load the URDF content and update the `name` and `initial_pose` as needed.
+
+3.  **Run the simulation**:
+    Launch Gazebo, then run your modified spawner node. Verify that your simple 2-link robot appears in the simulation.
+
+**Challenge (Optional)**: Can you make the `arm_link` move using ROS 2 topics? (Hint: You might need a `ros2_control` configuration for your URDF and appropriate Gazebo plugins to expose joint command topics.)
+
+## Summary & Further Reading
+
+In this chapter, we delved into the fundamentals of Gazebo simulation, a powerful tool for robotic development. We explored its client-server architecture, key components like physics engines and plugins, and the crucial role of URDF and SDF in defining robots and simulation environments. You learned how to programmatically spawn and control models in Gazebo using ROS 2, gaining practical experience in bridging simulation with robotic control.
+
+**Key Takeaways:**
+
+-   Gazebo provides a high-fidelity 3D simulation environment for robotics.
+-   URDF is best for single robot descriptions, while SDF is comprehensive for entire worlds.
+-   ROS 2 integration with Gazebo is achieved through services for spawning models and topics for control.
+
+**Further Reading:**
+
+-   **Gazebo Documentation**: [https://classic.gazebosim.org/tutorials](https://classic.gazebosim.org/tutorials) (For Gazebo Classic) or [https://gazebosim.org/docs](https://gazebosim.org/docs) (For Gazebo Sim - Ignition)
+-   **URDF Tutorial**: [http://wiki.ros.org/urdf/Tutorials](http://wiki.ros.org/urdf/Tutorials)
+-   **SDF Specification**: [https://sdformat.org/spec](https://sdformat.org/spec)
+-   **`gazebo_ros_pkgs`**: [http://wiki.ros.org/gazebo_ros_pkgs](http://wiki.ros.org/gazebo_ros_pkgs)
+-   **`ros_gz_sim`**: [https://github.com/ros-gazebosim/ros_gz](https://github.com/ros-gazebosim/ros_gz)

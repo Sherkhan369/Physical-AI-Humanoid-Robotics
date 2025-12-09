@@ -1,0 +1,334 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# High-Fidelity Humanoid Simulation in Unity
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+-   Set up and configure high-fidelity humanoid robot models in Unity.
+-   Implement Inverse Kinematics (IK) solutions for humanoid manipulation.
+-   Visualize various sensor data streams (e.g., cameras, force sensors) in real-time within Unity.
+-   Simulate complex human-robot interaction scenarios.
+-   Understand techniques for multi-robot simulation and distributed control.
+    - Effectively debug and optimize high-fidelity Unity-based robotics simulations.
+
+## Core Theory
+
+### Introduction to Humanoid Robotics in Unity
+
+Humanoid robots represent a significant frontier in robotics, aiming to replicate human-like form and function for tasks in human environments. Simulating these complex robots requires high-fidelity tools that can accurately model their kinematics, dynamics, sensor interactions, and interaction with the environment. Unity, with its advanced physics engine, realistic rendering capabilities, and extensibility, is an excellent platform for this.
+
+**Why Unity for Humanoid Simulation?**
+
+-   **Visual Fidelity**: Create highly realistic humanoid models and environments, crucial for human-robot interaction studies and visualization.
+-   **Advanced Physics**: Accurately simulate complex biomechanics, balance, and collision dynamics.
+-   **Animation System**: Leverage Unity's robust animation tools for natural human-like movements and gestures.
+-   **Sensor Simulation**: Integrate diverse sensor types, including vision (cameras), touch (force sensors), and proprioception (joint encoders).
+-   **Human-Robot Interaction (HRI)**: Develop and test intuitive interfaces for human control and collaboration with humanoid robots.
+
+### Setting Up High-Fidelity Humanoid Models
+
+The foundation of humanoid simulation in Unity is the robot model itself. This typically involves importing a detailed 3D model (e.g., FBX, glTF) and configuring it with Unity's physics and animation systems. For humanoid robots, the process often involves specific considerations:
+
+1.  **3D Model Import**: Import the humanoid robot's visual assets. These models usually come with a skeletal hierarchy (rig) that defines the robot's joints and links.
+2.  **URDF/SDF Import (Optional but Recommended)**: For robots defined using URDF or SDF, the Unity Robotics Hub provides a [URDF Importer](https://github.com/Unity-Technologies/Unity-Robotics-Hub/tree/main/tutorials/ros_unity_integration/urdf_importer) package. This tool can automatically generate a Unity GameObject hierarchy, add colliders, rigidbodies, and configurable joints based on your robot's kinematic and dynamic properties defined in the URDF/SDF. This greatly simplifies the setup process.
+    -   **Installation**: Add the URDF Importer package via Git URL in Unity's Package Manager: `https://github.com/Unity-Technologies/Unity-Robotics-Hub.git?path=/Assets/RosSharp/UrdfImporter#main` (or a specific version tag).
+3.  **Configuring Rigidbodies and Colliders**: Ensure each link of the humanoid robot has an appropriate `Rigidbody` component (for physics interaction) and `Collider` components (for collision detection). The URDF Importer handles this automatically for imported URDF models.
+4.  **Joint Configuration**: Unity's `ConfigurableJoint` component is highly flexible for defining robot joints, allowing you to specify degrees of freedom, limits, and spring/damper properties. For humanoid robots, carefully configuring these joints to match the physical robot's capabilities is essential.
+5.  **Animation and Avatars**: If your humanoid model is designed to animate, Unity's `Animator` component and `Avatar` system (often configured automatically upon FBX import) are used to manage complex animations and retargeting.
+
+By following these steps, you can establish a robust and physically accurate humanoid robot model in your Unity scene, ready for advanced control and interaction.
+
+### Code Example 2.4.1: Humanoid Inverse Kinematics (IK)
+
+Inverse Kinematics (IK) is a technique used in robotics and animation to calculate the joint angles required to reach a desired end-effector position. For humanoid robots, IK is crucial for tasks like grasping, reaching, and maintaining balance. Unity provides built-in IK capabilities through its Animator component, and external assets or custom scripts can offer more advanced control.
+
+#### 2.4.1.1 Setting Up Unity's Built-in IK (for Animator-driven Humanoids)
+
+If your humanoid robot model is set up with an `Animator` and an `Avatar` (typically the case for imported humanoid FBX models), Unity's built-in IK system can be used.
+
+1.  **Import a Humanoid Model**: Import a humanoid 3D model (e.g., from the Unity Asset Store, or a custom FBX with a humanoid rig) into your Unity project.
+2.  **Configure as Humanoid**: Select the imported model in the Project window. In the Inspector, go to the `Rig` tab, set `Animation Type` to `Humanoid`, and click `Apply`. Then, click `Configure Avatar` to verify the bone mapping.
+3.  **Add `Animator` Component**: Create an empty GameObject (e.g., `HumanoidRobot`) and add an `Animator` component to it. Drag your imported model into the scene as a child of `HumanoidRobot`. Drag the `Avatar` from your model's `Rig` tab into the `Animator`'s `Avatar` slot.
+4.  **Create an IK Script**: Create a new C# script named `HumanoidIKController` and attach it to the `HumanoidRobot` GameObject. This script will control the IK targets.
+
+    ```csharp
+    using UnityEngine;
+
+    [RequireComponent(typeof(Animator))]
+    public class HumanoidIKController : MonoBehaviour
+    {
+        protected Animator animator;
+
+        public bool ikActive = false;
+        public Transform rightHandObj = null; // Target for right hand
+        public Transform lookObj = null; // Target for head
+
+        void Start()
+        {
+            animator = GetComponent<Animator>();
+        }
+
+        // A callback for calculating IK
+        void OnAnimatorIK()
+        {
+            if(animator)
+            {
+                if(ikActive)
+                {
+                    // Set the look target position, if one has been assigned
+                    if(lookObj != null)
+                    {
+                        animator.SetLookAtWeight(1.0f);
+                        animator.SetLookAtPosition(lookObj.position);
+                    }
+
+                    // Set the right hand target position and rotation, if one has been assigned
+                    if(rightHandObj != null) 
+                    {
+                        animator.SetIKPositionWeight(AvatarIKGoal.RightHand,1.0f);
+                        animator.SetIKRotationWeight(AvatarIKGoal.RightHand,1.0f);  
+                        animator.SetIKPosition(AvatarIKGoal.RightHand,rightHandObj.position);
+                        animator.SetIKRotation(AvatarIKGoal.RightHand,rightHandObj.rotation);
+                    }
+                }
+                else
+                {
+                    // If IK is not active, set the weights to 0
+                    animator.SetIKPositionWeight(AvatarIKGoal.RightHand,0);
+                    animator.SetIKRotationWeight(AvatarIKGoal.RightHand,0);
+                    animator.SetLookAtWeight(0f);
+                }
+            }
+        }
+    }
+    ```
+
+5.  **Create IK Target GameObjects**: In the scene, create empty GameObjects for `RightHandTarget` and `LookTarget`. Position them where you want the robot's hand and head to move/look. Drag these GameObjects into the `rightHandObj` and `lookObj` slots of your `HumanoidIKController` script in the Inspector.
+6.  **Activate IK**: In the `HumanoidIKController` script's Inspector, check the `Ik Active` box.
+
+#### 2.4.1.2 Running the Example
+
+1.  **Play the Unity Scene**: Run your scene with the humanoid robot and IK targets.
+2.  **Move Targets**: Move the `RightHandTarget` and `LookTarget` GameObjects in the scene view while the simulation is running. You should observe the humanoid robot's right hand and head attempting to follow these targets using inverse kinematics.
+
+This example provides a foundational understanding of how to implement IK for humanoid robots in Unity, enabling more natural and goal-oriented manipulation.
+
+### Code Example 2.4.2: Sensor Data Visualization
+
+Visualizing sensor data in real-time is crucial for debugging, monitoring, and understanding the behavior of humanoid robots in simulation. Unity offers various ways to achieve this, from simple debug drawings to advanced UI overlays.
+
+#### 2.4.2.1 Visualizing Force Sensor Data (Using `Debug.DrawLine`)
+
+Let's assume your humanoid robot has a force sensor attached to its end-effector (e.g., a hand or foot). We can visualize the force vector using Unity's `Debug.DrawLine`.
+
+1.  **Create a Force Sensor Script (Conceptual)**:
+    First, imagine you have a script (or a component from a robotics package) that simulates a force sensor and provides force readings. For this example, we'll create a simple placeholder that generates a fluctuating force.
+
+    Create a new C# script named `ForceSensorSimulator` and attach it to the `RightHandTarget` (or any part of your humanoid where a sensor would be, or even an empty GameObject representing a sensor).
+
+    ```csharp
+    using UnityEngine;
+
+    public class ForceSensorSimulator : MonoBehaviour
+    {
+        public Vector3 currentForce = Vector3.zero;
+        public float maxForceMagnitude = 10.0f;
+        public float noiseMagnitude = 0.5f;
+
+        void FixedUpdate()
+        {
+            // Simulate a fluctuating force
+            currentForce.x = Mathf.Sin(Time.time * 2.0f) * maxForceMagnitude + Random.Range(-noiseMagnitude, noiseMagnitude);
+            currentForce.y = Mathf.Cos(Time.time * 1.5f) * maxForceMagnitude + Random.Range(-noiseMagnitude, noiseMagnitude);
+            currentForce.z = Mathf.PerlinNoise(Time.time * 0.5f, 0) * maxForceMagnitude + Random.Range(-noiseMagnitude, noiseMagnitude);
+        }
+    }
+    ```
+
+2.  **Create a Visualization Script**: Create a new C# script named `ForceVisualization` and attach it to the same GameObject as your `ForceSensorSimulator` (or to the `RightHandTarget` directly if you're simulating the sensor there).
+
+    ```csharp
+    using UnityEngine;
+
+    [RequireComponent(typeof(ForceSensorSimulator))]
+    public class ForceVisualization : MonoBehaviour
+    {
+        private ForceSensorSimulator sensor;
+        public float visualizationScale = 0.1f; // Adjust to make the line visible
+        public Color forceColor = Color.red;
+
+        void Start()
+        {
+            sensor = GetComponent<ForceSensorSimulator>();
+            if (sensor == null)
+            {
+                Debug.LogError("ForceSensorSimulator not found on this GameObject. Please add it.");
+                enabled = false;
+            }
+        }
+
+        void Update()
+        {
+            if (sensor != null)
+            {
+                // Draw a line from the sensor's position in the direction of the force
+                Debug.DrawLine(transform.position, transform.position + sensor.currentForce * visualizationScale, forceColor);
+            }
+        }
+    }
+    ```
+
+#### 2.4.2.2 Running the Example
+
+1.  **Play the Unity Scene**: Run your scene. Ensure the `ForceSensorSimulator` and `ForceVisualization` scripts are attached to a GameObject (e.g., `RightHandTarget`).
+2.  **Observe Force Vector**: In the Scene view (you might need to enable Gizmos), you should see a red line originating from the GameObject and extending in the direction of the simulated force. The length and direction of this line will fluctuate as the simulated force changes.
+
+    This basic example demonstrates how to visualize abstract sensor data (like force vectors) directly within the 3D scene using Unity's debug drawing capabilities. For more complex data, UI elements (Canvas, TextMeshPro) or custom shaders can be used.
+
+### Diagram 2.4.1: Humanoid Control Architecture
+
+```mermaid
+graph TD
+    A[Unity Scene (Simulation)] -- Rendered Frames --> B{Camera Sensors}
+    A -- Physics Interactions --> C{Force/Torque Sensors}
+    A -- Joint States --> D{Proprioception (Joint Encoders)}
+
+    B -- Image Data --> E[Perception Module (e.g., Object Detection)]
+    C -- Force Data --> F[Contact & Balance Estimation]
+    D -- Joint Angles --> G[Kinematics & Dynamics Module]
+
+    E -- Object Poses --> H[High-Level Task Planner]
+    F -- Balance State --> H
+    G -- Current State --> H
+
+    H -- Desired Actions --> I[Low-Level Controller (e.g., PID, Whole-Body Control)]
+    I -- Joint Commands --> J[Unity Physics Engine / Actuators]
+    J -- Actuator Feedback --> D
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B,C,D fill:#ccf,stroke:#333,stroke-width:2px
+    style E,F,G fill:#dfd,stroke:#333,stroke-width:2px
+    style H fill:#fcf,stroke:#333,stroke-width:2px
+    style I fill:#dfd,stroke:#333,stroke-width:2px
+    style J fill:#f9f,stroke:#333,stroke-width:2px
+```
+
+## Hands-on Exercise 2.4.1: Implementing Humanoid Balance Control
+
+**Goal**: Develop a basic balance control mechanism for your humanoid robot in Unity, using simulated sensor data (e.g., center of mass, foot contact forces) to maintain an upright posture.
+
+1.  **Identify Key Balance Indicators**:
+    -   **Center of Mass (CoM)**: The Unity Physics engine can help you calculate the approximate center of mass for your humanoid. You can sum the weighted positions of all rigidbodies.
+    -   **Foot Contact/Force**: You can use `OnCollisionStay` callbacks on the humanoid's feet colliders to detect contact with the ground and estimate contact forces (e.g., from `collision.impulse`).
+
+2.  **Create a Balance Controller Script (`BalanceController.cs`)**:
+    Create a new C# script named `BalanceController` and attach it to your `HumanoidRobot` GameObject. This script will read sensor data and apply corrective forces or torques.
+
+    ```csharp
+    using UnityEngine;
+    using System.Collections.Generic;
+
+    public class BalanceController : MonoBehaviour
+    {
+        public Rigidbody hipsRigidbody; // The main rigidbody for balance control
+        public List<Collider> footColliders; // Colliders for the feet
+        public float uprightForceMagnitude = 100.0f; // Force to push hips upright
+        public float antiToppleTorqueMagnitude = 50.0f; // Torque to counter toppling
+
+        private Vector3 centerOfMass;
+
+        void Start()
+        {
+            if (hipsRigidbody == null)
+            {
+                Debug.LogError("Hips Rigidbody not assigned for BalanceController.");
+                enabled = false;
+            }
+            if (footColliders == null || footColliders.Count == 0)
+            {
+                Debug.LogWarning("No foot colliders assigned for BalanceController. Balance control might be less effective.");
+            }
+        }
+
+        void FixedUpdate()
+        {
+            // 1. Estimate Center of Mass (simplified)
+            // For a more accurate CoM, iterate through all child rigidbodies and average their positions based on mass.
+            centerOfMass = hipsRigidbody.worldCenterOfMass;
+
+            // 2. Check for ground contact (simplified: assuming feet are the only ground contacts)
+            bool onGround = false;
+            foreach (Collider foot in footColliders)
+            {
+                // More sophisticated contact detection would use collision events
+                // For simplicity, we check if the foot is near the ground or has collided recently.
+                // This requires careful tuning or actual collision callbacks.
+                // For this exercise, assume if hips are low enough, it's 'on ground'
+                if (hipsRigidbody.position.y < 0.6f) // Arbitrary threshold
+                {
+                    onGround = true;
+                    break;
+                }
+            }
+
+            // 3. Apply corrective forces/torques if off-balance
+            if (onGround)
+            {
+                // Keep the hips upright
+                Vector3 uprightDirection = Vector3.up;
+                Quaternion currentRotation = hipsRigidbody.rotation;
+                Quaternion targetRotation = Quaternion.identity; // Desired upright rotation
+
+                // Calculate the torque needed to align the robot with the upright direction
+                Vector3 torque = Vector3.Cross(currentRotation * uprightDirection, targetRotation * uprightDirection);
+                hipsRigidbody.AddTorque(torque * antiToppleTorqueMagnitude, ForceMode.Acceleration);
+
+                // Optionally, apply a force to push the CoM back over the support polygon
+                // This is more advanced and requires defining the support polygon
+                // For now, a simple upward force if leaning too much
+                if (Vector3.Dot(transform.up, Vector3.up) < 0.95f) // If leaning more than ~18 degrees
+                {
+                     hipsRigidbody.AddForce(Vector3.up * uprightForceMagnitude, ForceMode.Acceleration);
+                }
+            }
+        }
+
+        void OnDrawGizmos()
+        {
+            if (hipsRigidbody != null)
+            {
+                Gizmos.color = Color.cyan;
+                Gizmos.DrawSphere(hipsRigidbody.worldCenterOfMass, 0.05f);
+                Gizmos.DrawLine(hipsRigidbody.position, hipsRigidbody.position + Vector3.up * 0.5f);
+            }
+        }
+    }
+    ```
+
+3.  **Assign Components**: Attach the `BalanceController` script to your `HumanoidRobot` GameObject. Drag the `hipsRigidbody` (e.g., your robot's pelvis or main body `Rigidbody`) into the corresponding slot. Drag your foot `Collider` components into the `Foot Colliders` list.
+
+4.  **Test and Tune**:
+    -   Run the Unity scene. Observe how your humanoid robot responds to slight disturbances (e.g., pushing it with another object or character).
+    -   Adjust `uprightForceMagnitude` and `antiToppleTorqueMagnitude` in the Inspector to fine-tune the balance control. Experiment with different values to see how the robot's stability changes.
+
+    **Expected behavior**: The humanoid robot should attempt to maintain an upright posture, recovering from small pushes or imbalances. You might see the gizmo representing the CoM moving and corrective forces being applied.
+
+## Summary & Further Reading
+
+In this chapter, we explored the intricacies of high-fidelity humanoid robot simulation within Unity. You learned how to set up and configure detailed humanoid models, implement Inverse Kinematics (IK) for precise manipulation, and visualize critical sensor data for real-time analysis. We covered the importance of Unity's physics and animation systems for achieving realistic humanoid behavior and provided a foundational understanding for building complex human-robot interaction scenarios.
+
+**Key Takeaways:**
+
+-   Unity provides a rich environment for developing and simulating high-fidelity humanoid robots.
+-   Inverse Kinematics (IK) is a vital tool for controlling humanoid limbs and achieving goal-oriented actions.
+-   Effective visualization of sensor data is essential for understanding and debugging humanoid robot behavior.
+
+**Further Reading:**
+
+-   **Unity Manual - IK**: [https://docs.unity3d.com/Manual/InverseKinematics.html](https://docs.unity3d.com/Manual/InverseKinematics.html)
+-   **Unity Manual - Rigidbody**: [https://docs.unity3d.com/Manual/class-Rigidbody.html](https://docs.unity3d.com/Manual/class-Rigidbody.html)
+-   **Unity Robotics Hub - URDF Importer**: [https://github.com/Unity-Technologies/Unity-Robotics-Hub/tree/main/tutorials/ros_unity_integration/urdf_importer](https://github.com/Unity-Technologies/Unity-Robotics-Hub/tree/main/tutorials/ros_unity_integration/urdf_importer)
+-   **Research Paper on Humanoid Balance Control**: [https://ieeexplore.ieee.org/document/6386047](https://ieeexplore.ieee.org/document/6386047) (Example, search for more recent papers on humanoid balance)

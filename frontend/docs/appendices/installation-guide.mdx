@@ -1,0 +1,156 @@
+---
+sidebar_position: 1
+title: Installation Guide
+---
+
+# Installation Guide
+
+This guide provides detailed instructions for setting up your development environment to follow along with the code examples and exercises in this textbook. We will cover the installation of essential tools and frameworks, including ROS 2, Gazebo, Unity, and NVIDIA Isaac Sim, as well as their respective integrations.
+
+## Prerequisites
+
+Before you begin, ensure your system meets the following minimum requirements:
+
+-   **Operating System**: Ubuntu 22.04 LTS (recommended for ROS 2 and Gazebo) or Windows 10/11 (for Unity and potentially WSL2 for ROS 2).
+-   **Hardware**: 
+    -   **Processor**: Multi-core CPU (Intel i7/AMD Ryzen 7 or higher recommended).
+    -   **RAM**: 16 GB or more.
+    -   **GPU**: NVIDIA discrete GPU with CUDA support (RTX series recommended for Isaac Sim and advanced Unity features). Minimum 8GB VRAM.
+    -   **Storage**: 200 GB SSD free space.
+
+## 1. ROS 2 Installation (Humble Hawksbill on Ubuntu 22.04)
+
+Follow the official ROS 2 documentation for the most up-to-date installation instructions. Here's a summarized guide:
+
+1.  **Set up Locale**: Ensure your locale is set to `UTF-8`.
+    ```bash
+    locale # check locale
+    sudo apt update && sudo apt install locales
+    sudo locale-gen en_US en_US.UTF-8
+    sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+    export LANG=en_US.UTF-8
+    ```
+
+2.  **Add ROS 2 Repository**: Add the ROS 2 apt repository.
+    ```bash
+    sudo apt install software-properties-common
+    sudo add-apt-repository universe
+    sudo apt update && sudo apt install curl -y
+    sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+    ```
+
+3.  **Install ROS 2 Humble Desktop**: Install the full desktop version.
+    ```bash
+    sudo apt update
+    sudo apt upgrade -y
+    sudo apt install ros-humble-desktop -y
+    ```
+
+4.  **Environment Setup**: Source the ROS 2 setup script.
+    ```bash
+    echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+    source ~/.bashrc
+    ```
+
+5.  **Install `rosdep`**: Tool for installing system dependencies.
+    ```bash
+    sudo apt install python3-rosdep -y
+    sudo rosdep init
+    rosdep update
+    ```
+
+## 2. Gazebo Garden Installation
+
+Gazebo Garden is the default simulator for ROS 2 Humble. Follow these steps for installation:
+
+1.  **Add Gazebo Repository**: 
+    ```bash
+    sudo apt install curl gnupg2 lsb-release
+    curl -sSL http://get.gazebosim.org | sh
+    ```
+
+2.  **Install Gazebo Garden**: 
+    ```bash
+    sudo apt update
+    sudo apt install ros-humble-gazebo-ros-pkgs -y # Installs Gazebo Garden and ROS 2 integration
+    ```
+
+3.  **Verify Installation**: Run Gazebo.
+    ```bash
+    gazebo
+    ```
+
+## 3. Unity Hub and Unity Editor Installation
+
+1.  **Download Unity Hub**: Go to [Unity's website](https://unity.com/download) and download Unity Hub for your operating system.
+
+2.  **Install Unity Hub**: Follow the on-screen instructions to install Unity Hub.
+
+3.  **Install Unity Editor**: 
+    -   Open Unity Hub.
+    -   Go to the `Installs` tab.
+    -   Click `Install Editor`.
+    -   Select a **LTS (Long Term Support)** version (e.g., 2023.x LTS) for stability.
+    -   Ensure you select the **Linux Build Support (Mono)** module if you plan to integrate with ROS 2 on Ubuntu.
+    -   Click `Install`.
+
+4.  **Unity Robotics Hub**: For ROS 2 integration, you'll need the Unity Robotics Hub packages. Follow the instructions on their GitHub page:
+    -   [https://github.com/Unity-Technologies/Unity-Robotics-Hub](https://github.com/Unity-Technologies/Unity-Robotics-Hub)
+    -   You can clone the repository and open the `ros_unity_integration` project, or import specific packages via `Package Manager -> Add package from git URL` as demonstrated in relevant chapters.
+
+## 4. NVIDIA Isaac Sim Installation
+
+NVIDIA Isaac Sim requires specific hardware (NVIDIA GPU) and a Docker/Singularity setup. 
+
+1.  **NVIDIA Drivers**: Ensure you have the latest NVIDIA proprietary drivers installed.
+    ```bash
+    ubuntu-drivers devices # List recommended drivers
+    sudo ubuntu-drivers install <recommended-driver>
+    sudo reboot
+    ```
+
+2.  **Docker Installation**: Follow the official Docker documentation for your Ubuntu version.
+    -   [https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/)
+    -   Ensure you add your user to the `docker` group: `sudo usermod -aG docker $USER` (requires logout/login).
+
+3.  **NVIDIA Container Toolkit**: Required for GPU acceleration within Docker containers.
+    -   [https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
+4.  **Download Isaac Sim**: Isaac Sim is distributed via the NVIDIA Omniverse Launcher. 
+    -   Download Omniverse Launcher: [https://www.nvidia.com/en-us/omniverse/download/](https://www.nvidia.com/en-us/omniverse/download/)
+    -   Install Omniverse Launcher and then install Isaac Sim through the Launcher.
+
+5.  **Run Isaac Sim via Docker (Alternative/Advanced)**: For headless or specific development workflows, you might run Isaac Sim in a Docker container. Refer to the official Isaac Sim documentation for detailed instructions.
+    -   [https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/install_container.html](https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/install_container.html)
+
+## 5. Python Environment Setup
+
+Many examples and tools in this book will use Python.
+
+1.  **Install `pip` and `venv`**: 
+    ```bash
+    sudo apt install python3-pip python3-venv
+    ```
+
+2.  **Create a Virtual Environment**: It's highly recommended to use virtual environments for each project.
+    ```bash
+    python3 -m venv ~/physical_ai_venv
+    source ~/physical_ai_venv/bin/activate
+    ```
+
+3.  **Install Common Libraries**: 
+    ```bash
+    pip install numpy scipy matplotlib ipython jupyter
+    pip install ros-foxy-ros2msg
+    ```
+    (Note: `ros-foxy-ros2msg` is an example; specific ROS 2 Python packages will be installed as needed within chapters.)
+
+## Troubleshooting
+
+-   **ROS 2 Sourcing**: If ROS 2 commands are not found, ensure you have sourced your `setup.bash` (e.g., `source /opt/ros/humble/setup.bash`).
+-   **Unity Graphics Issues**: Ensure your graphics drivers are up to date. For Linux, make sure `xserver-xorg-dev` is installed.
+-   **Docker Permissions**: If you encounter `docker: permission denied` errors, ensure your user is in the `docker` group and you have logged out and back in.
+-   **NVIDIA GPU Issues with Docker**: Verify `nvidia-smi` works outside Docker, and that the NVIDIA Container Toolkit is correctly installed.
+
+This installation guide should get you started with a robust environment for exploring physical AI. Refer to official documentation for more detailed or platform-specific instructions.

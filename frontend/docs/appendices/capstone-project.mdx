@@ -1,0 +1,69 @@
+---
+sidebar_position: 2
+title: Capstone Project Ideas
+---
+
+# Capstone Project Ideas
+
+To solidify your understanding and apply the concepts learned in this textbook, we highly recommend undertaking a capstone project. These projects will challenge you to integrate knowledge from various modules and develop a practical physical AI system. Below are several project ideas, categorized by complexity and focus area, that you can use as inspiration. Feel free to adapt these or come up with your own!.
+
+## Beginner-Friendly Projects
+
+These projects are suitable for those new to physical AI or looking for a guided introduction.
+
+1.  **ROS 2-Controlled Mobile Robot with Simple Navigation**
+    -   **Goal**: Control a simulated (Gazebo) or real (e.g., TurtleBot 3) mobile robot using ROS 2 to perform basic waypoint navigation and obstacle avoidance.
+    -   **Key Concepts**: ROS 2 fundamentals, `ros2_navigation`, sensors (LiDAR/depth camera), teleoperation.
+    -   **Deliverables**: A functional ROS 2 package that launches the robot in a simulated environment and navigates to predefined waypoints.
+
+2.  **Unity-based Robotic Arm Teleoperation**
+    -   **Goal**: Create a 3D model of a robotic arm in Unity and teleoperate it using a simple input device (e.g., keyboard, joystick) or a ROS 2 interface.
+    -   **Key Concepts**: Unity scene setup, `ConfigurableJoints`, ROS 2 Unity Integration (if using ROS 2), forward kinematics.
+    -   **Deliverables**: A Unity project with a controllable robotic arm, demonstrating real-time movement.
+
+3.  **Basic Object Detection and Grasping in Gazebo**
+    -   **Goal**: Simulate a robotic arm in Gazebo that can detect a simple object (e.g., a colored cube) using a simulated camera and attempt to grasp it.
+    -   **Key Concepts**: Gazebo sensor plugins (camera), basic computer vision (e.g., color thresholding with OpenCV), ROS 2 topics, simple manipulation control.
+    -   **Deliverables**: A Gazebo simulation with a robot that can visually identify and attempt to pick up an object.
+
+## Intermediate Projects
+
+These projects build upon foundational knowledge and involve more complex integration and algorithms.
+
+1.  **Humanoid Robot Balance Control in Unity**
+    -   **Goal**: Implement a robust balance controller for a humanoid robot in Unity, enabling it to maintain an upright posture against external disturbances and recover from slight falls.
+    -   **Key Concepts**: Inverse Kinematics (IK), center of mass (CoM) estimation, force/torque sensing, PID control, rigid body dynamics.
+    -   **Deliverables**: A Unity humanoid simulation demonstrating stable balance and recovery mechanisms.
+
+2.  **ROS 2-Unity Integrated Pick-and-Place System**
+    -   **Goal**: Develop a system where an object is detected in a Unity scene, and its pose is sent via ROS 2 to a robotic arm simulated in Gazebo, which then performs a pick-and-place operation.
+    -   **Key Concepts**: ROS 2 Unity integration, computer vision (object pose estimation), ROS 2 services/actions, MoveIt 2 (for motion planning in Gazebo), coordinate transformations.
+    -   **Deliverables**: A distributed system where Unity acts as the perception front-end and Gazebo/ROS 2 handles manipulation.
+
+3.  **Reinforcement Learning for Simple Quadruped Locomotion**
+    -   **Goal**: Train a simple quadruped robot (e.g., a Spot-like robot) to walk or trot using reinforcement learning in a simulated environment (e.g., Isaac Gym or Gazebo).
+    -   **Key Concepts**: Reinforcement learning fundamentals (PPO, SAC), reward function design, observation/action spaces, simulated physics, training frameworks (e.g., Stable Baselines3, Isaac Gym RL).
+    -   **Deliverables**: A trained RL policy that enables the quadruped to move stably and efficiently.
+
+## Advanced Projects
+
+These projects are challenging and require a strong grasp of multiple advanced topics.
+
+1.  **Vision-Language-Action (VLA) Robotic Assistant**
+    -   **Goal**: Develop a robotic assistant that can understand natural language commands, perceive its environment visually, and execute physical actions. For example, "Pick up the red mug and place it on the table."
+    -   **Key Concepts**: Natural Language Understanding (NLU), large language models (LLMs) for task planning, object detection and segmentation, multi-modal perception, complex manipulation, robust error handling.
+    -   **Deliverables**: An end-to-end system where a robot responds to vocal/text commands to interact with objects in a cluttered environment.
+
+2.  **Human-Robot Collaborative Assembly**
+    -   **Goal**: Design and implement a system where a human and a robot collaboratively assemble a product in a shared workspace. The robot should infer human intent and adapt its actions accordingly.
+    -   **Key Concepts**: Human activity recognition (e.g., pose estimation, object tracking), human-robot interaction (HRI) safety, shared autonomy, real-time task allocation, force-feedback control.
+    -   **Deliverables**: A simulation or real-world demonstration of human-robot co-assembly, with clear communication and safety protocols.
+
+3.  **Real-time SLAM and Autonomous Exploration with a Mobile Manipulator**
+    -   **Goal**: Equip a mobile manipulator (mobile base + robotic arm) with Simultaneous Localization and Mapping (SLAM) capabilities to autonomously explore an unknown environment, map it, and perform tasks (e.g., object retrieval) within the mapped area.
+    -   **Key Concepts**: Advanced SLAM algorithms (e.g., Cartographer, RTAB-Map), global and local path planning, mobile base control, robotic arm navigation in dynamic environments, task-level autonomy.
+    -   **Deliverables**: A fully autonomous mobile manipulator system capable of exploring, mapping, and executing tasks in a complex environment.
+
+---
+
+Remember to define clear objectives, break down your project into manageable sub-tasks, and leverage version control (Git) throughout your development process. Good luck!

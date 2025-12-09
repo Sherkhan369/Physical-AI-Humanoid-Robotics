@@ -1,0 +1,327 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Advanced ROS 2 Communication and Tools
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+-   Define and use custom ROS 2 message types.
+-   Understand and utilize ROS 2 parameters for dynamic node configuration.
+-   Implement basic transformations with `tf2` for spatial reasoning.
+-   Record and playback ROS 2 data using `rosbag`.
+-   Utilize RQT tools for introspection and debugging of ROS 2 systems.
+-   Apply advanced debugging techniques for ROS 2 nodes and communication.
+
+## Core Theory
+
+### Custom Message Definitions
+
+While ROS 2 provides a wide array of standard message types (e.g., `std_msgs`, `geometry_msgs`, `sensor_msgs`), real-world robotic applications often require custom data structures to represent specific information. ROS 2 allows developers to define their own message (`.msg`), service (`.srv`), and action (`.action`) types using a simple definition language. These custom types are then compiled into language-specific code (e.g., Python classes, C++ structs) that can be used by ROS 2 nodes.
+
+#### Message Definition (`.msg`)
+
+A `.msg` file is a plain text file in a ROS 2 package's `msg` directory that describes the fields and their types. Each field has a type and a name. ROS 2 supports primitive types (integers, floats, booleans, strings) and arrays of these types. You can also embed other message types.
+
+**Example `ComplexData.msg`:**
+
+```
+std_msgs/Header header
+string name
+int32 id
+float64[] values
+bool is_active
+```
+
+Here, `std_msgs/Header` is an embedded standard message type that often contains a timestamp and a frame ID, useful for synchronizing data and tracking its origin.
+
+**Building Custom Messages**
+
+To make a custom message type available to your ROS 2 nodes, you need to configure your package's `CMakeLists.txt` and `package.xml` files. The `rosidl_generate_interfaces` CMake function is used to generate the necessary code from your `.msg` files.
+
+**In `CMakeLists.txt` (example for `my_ros2_package` with custom messages):**
+
+```cmake
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(
+  my_ros2_package
+  "msg/ComplexData.msg"
+  "srv/AddTwoInts.srv" # If you also have services
+  "action/Averaging.action" # If you also have actions
+)
+
+# Ensure message runtime is found for execution
+ament_export_dependencies(rosidl_default_runtime)
+```
+
+**In `package.xml` (example for `my_ros2_package`):**
+
+```xml
+<buildtool_depend>ament_cmake</buildtool_depend>
+<build_depend>rosidl_default_generators</build_depend>
+<exec_depend>rosidl_default_runtime</exec_depend>
+<member_of_group>rosidl_interface_packages</member_of_group>
+
+<depend>std_msgs</depend> <!-- if you use std_msgs/Header or other std_msgs -->
+```
+
+After modifying these files, you need to rebuild your workspace (`colcon build`) to compile the custom messages. Once built, you can import and use them in your Python or C++ ROS 2 nodes.
+
+### Code Example 1.2.1: Custom Message Publisher and Subscriber
+
+This example demonstrates how to define and use a custom message type. We will create a custom message `SensorReading.msg` and then implement a publisher and subscriber for it.
+
+#### 1.2.1.1 Custom Message Definition (`SensorReading.msg`)
+
+Create a file named `SensorReading.msg` in `my_ros2_package/msg/` (assuming `my_ros2_package` is your ROS 2 package):
+
+```
+std_msgs/Header header
+float32 temperature
+float32 humidity
+string sensor_name
+```
+
+#### 1.2.1.2 Custom Message Publisher Node (`custom_sensor_publisher.py`)
+
+```python
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Header
+from builtin_interfaces.msg import Time
+
+from my_ros2_package.msg import SensorReading # Import your custom message
+
+import time as py_time # To get system time
+
+
+class CustomSensorPublisher(Node):
+
+    def __init__(self):
+        super().__init__('custom_sensor_publisher')
+        self.publisher_ = self.create_publisher(SensorReading, 'sensor_data', 10)
+        timer_period = 1.0  # seconds
+        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.sensor_id = 0
+
+    def timer_callback(self):
+        msg = SensorReading()
+        msg.header = Header()
+        
+        # Populate timestamp in header
+        current_time = self.get_clock().now().to_msg()
+        msg.header.stamp = current_time
+
+        msg.sensor_name = f'temp_humidity_sensor_{self.sensor_id}'
+        msg.temperature = 25.0 + (self.sensor_id % 5) * 0.5 # Simulate varying temperature
+        msg.humidity = 60.0 - (self.sensor_id % 3) * 1.0 # Simulate varying humidity
+        
+        self.publisher_.publish(msg)
+        self.get_logger().info(f'Publishing: Sensor: {msg.sensor_name}, Temp: {msg.temperature:.1f}C, Hum: {msg.humidity:.1f}%')
+        self.sensor_id += 1
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    custom_sensor_publisher = CustomSensorPublisher()
+
+    rclpy.spin(custom_sensor_publisher)
+
+    custom_sensor_publisher.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.2.1.3 Custom Message Subscriber Node (`custom_sensor_subscriber.py`)
+
+```python
+import rclpy
+from rclpy.node import Node
+
+from my_ros2_package.msg import SensorReading # Import your custom message
+
+
+class CustomSensorSubscriber(Node):
+
+    def __init__(self):
+        super().__init__('custom_sensor_subscriber')
+        self.subscription = self.create_subscription(
+            SensorReading,
+            'sensor_data',
+            self.listener_callback,
+            10)
+        self.subscription  # prevent unused variable warning
+
+    def listener_callback(self, msg):
+        self.get_logger().info(f'I heard: [TS: {msg.header.stamp.sec}.{msg.header.stamp.nanosec}], Sensor: {msg.sensor_name}, Temp: {msg.temperature:.1f}C, Hum: {msg.humidity:.1f}%')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    custom_sensor_subscriber = CustomSensorSubscriber()
+
+    rclpy.spin(custom_sensor_subscriber)
+
+    custom_sensor_subscriber.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.2.1.4 Running the Example
+
+1.  **Define and build custom messages**: Make sure you have `my_ros2_package` created and configured as described in Core Theory section for custom messages. Place `SensorReading.msg` in `my_ros2_package/msg/`. Then rebuild your workspace:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+2.  **Place the Python files**: Place `custom_sensor_publisher.py` and `custom_sensor_subscriber.py` in `my_ros2_package/my_ros2_package/`.
+3.  **Update `setup.py`**: Add the new nodes to the `entry_points` in `my_ros2_package/setup.py`:
+    ```python
+    entry_points={
+        'console_scripts': [
+            # ... existing entries ...
+            'sensor_publisher = my_ros2_package.custom_sensor_publisher:main',
+            'sensor_subscriber = my_ros2_package.custom_sensor_subscriber:main',
+        ],
+    },
+    ```
+4.  **Rebuild the package** (if you modified `setup.py`):
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+5.  **Source the setup files**: In a new terminal:
+    ```bash
+    source install/setup.bash
+    ```
+6.  **Run the publisher**: In the first terminal:
+    ```bash
+    ros2 run my_ros2_package sensor_publisher
+    ```
+7.  **Run the subscriber**: In a second terminal (after sourcing setup):
+    ```bash
+    ros2 run my_ros2_package sensor_subscriber
+    ```
+
+You will observe the publisher sending `SensorReading` messages with simulated temperature and humidity data, and the subscriber receiving and logging these custom messages.
+
+### ROS 2 Parameters
+
+ROS 2 parameters allow nodes to expose configurable values that can be set dynamically at runtime or loaded from a configuration file. This provides a flexible way to modify node behavior without recompiling the code. Parameters can be of various types, such as integers, floats, booleans, strings, and lists of these types.
+
+**Key concepts of ROS 2 parameters:**
+
+-   **Declaration**: Nodes explicitly declare the parameters they use, specifying their name, type, and optionally a default value and a description.
+-   **Getting/Setting**: Parameters can be retrieved (get) and modified (set) programmatically within a node or via the `ros2 param` command-line tool.
+-   **Callbacks**: Nodes can register callbacks to be notified when a parameter's value changes, enabling dynamic adaptation to new configurations.
+-   **Configuration Files**: Parameters can be loaded from YAML files when a node is launched, which is particularly useful for managing complex configurations.
+
+#### Declaring Parameters in a Node
+
+To declare a parameter in a Python ROS 2 node, you use the `declare_parameter` method:
+
+```python
+import rclpy
+from rclpy.node import Node
+
+class MyParameterNode(Node):
+    def __init__(self):
+        super().__init__('my_parameter_node')
+        # Declare a parameter with a default value
+        self.declare_parameter('my_int_param', 0)
+        self.declare_parameter('my_string_param', 'hello')
+
+        # Get parameter value
+        initial_int = self.get_parameter('my_int_param').value
+        initial_string = self.get_parameter('my_string_param').value
+        self.get_logger().info(f'Initial int param: {initial_int}, string param: {initial_string}')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = MyParameterNode()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+
+#### Setting Parameters
+
+Parameters can be set via the command line or programmatically. Using the command line:
+
+```bash
+ros2 param set /my_parameter_node my_int_param 10
+```
+
+To see available parameters and their values:
+
+```bash
+ros2 param list
+ros2 param get /my_parameter_node my_int_param
+```
+
+#### Loading Parameters from a YAML File
+
+You can define parameters in a YAML file and load them when launching a node. Create a `config/my_params.yaml` file:
+
+```yaml
+my_parameter_node:
+  ros__parameters:
+    my_int_param: 20
+    my_string_param: "world"
+```
+
+Then, launch your node with the parameter file:
+
+```bash
+ros2 run my_ros2_package my_parameter_node --ros-args --params-file config/my_params.yaml
+```
+
+## Hands-on Exercises
+
+### Exercise 1.2.1: Create Custom ROS 2 Messages
+
+**Goal**: Expand on the custom message example by creating a new custom message type for a robot's state (`RobotState.msg`) that includes its `name`, `pose` (using `geometry_msgs/Pose`), and current `battery_level` (float).
+
+**Expected Output**: After building and running, you should be able to publish `RobotState` messages from one node and subscribe to them in another, verifying all fields are correctly transmitted and received.
+
+1.  **Define `RobotState.msg`**: In your `my_ros2_package/msg/` directory, create `RobotState.msg`.
+    ```
+    std_msgs/Header header
+    string name
+    geometry_msgs/Pose pose
+    float32 battery_level
+    ```
+2.  **Update `CMakeLists.txt` and `package.xml`**: Ensure your `my_ros2_package` is configured to build `RobotState.msg` and depends on `geometry_msgs`.
+3.  **Create `robot_state_publisher.py`**: Implement a node that publishes `RobotState` messages with simulated data (e.g., incrementing `battery_level`, random `x, y, z` for pose).
+4.  **Create `robot_state_subscriber.py`**: Implement a node that subscribes to the `robot_state` topic and logs the robot's name, battery level, and position.
+5.  **Update `setup.py`**: Add entry points for your new publisher and subscriber nodes.
+6.  **Build your workspace** and then run your publisher and subscriber nodes to verify communication.
+
+### Exercise 1.2.2: Integrate Parameters into a Node
+
+**Goal**: Modify the `custom_sensor_publisher.py` node to use ROS 2 parameters for its publishing frequency and sensor name. The node should load these parameters from a YAML file at startup.
+
+**Expected Output**:
+-   The publishing rate should change dynamically if you modify the parameter at runtime.
+-   The sensor name in the published messages should reflect the value loaded from the YAML file or set at runtime.
+
+1.  **Modify `custom_sensor_publisher.py`**:
+    -   Declare two parameters: `publish_frequency` (float, default 1.0) and `sensor_name_prefix` (string, default "my_sensor").
+    -   Use `publish_frequency` to set the `timer_period`.
+    -   Use `sensor_name_prefix` when constructing the `msg.sensor_name`.
+    -   Implement a parameter callback to update the `timer_period` if `publish_frequency` changes at runtime.
+2.  **Create a YAML parameter file**: Create `config/advanced_sensor_params.yaml` with values for `publish_frequency` and `sensor_name_prefix`.
+3.  **Launch the modified node**: Launch `custom_sensor_publisher.py` using a launch file or direct `ros2 run` command with `--ros-args --params-file config/advanced_sensor_params.yaml`.
+4.  **Test dynamic parameter changes**: Use `ros2 param set /custom_sensor_publisher publish_frequency 0.2` to observe the change in publishing rate.

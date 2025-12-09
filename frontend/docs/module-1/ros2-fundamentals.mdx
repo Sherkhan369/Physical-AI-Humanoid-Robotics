@@ -1,0 +1,623 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# ROS 2 Fundamentals: Architecture and Core Concepts
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+-   Understand the core architecture of ROS 2.
+-   Differentiate between ROS 2 nodes, topics, services, and actions.
+-   Implement basic Publisher-Subscriber patterns for inter-node communication.
+-   Utilize ROS 2 services for request-response interactions.
+-   Implement ROS 2 actions for long-running, goal-oriented tasks.
+-   Understand the role of messages and define custom message types.
+-   Use ROS 2 launch files to orchestrate multiple nodes.
+-   Explain the `ament` build system and workspace management.
+
+## Core Theory
+
+### Introduction to ROS 2
+
+ROS (Robot Operating System) has evolved significantly from its first generation to ROS 2, addressing critical requirements for modern robotics development such as real-time capabilities, multi-robot systems, and improved security. ROS 2 is not an operating system in the traditional sense, but rather a flexible framework for writing robot software. It is a collection of tools, libraries, and conventions that aim to simplify the task of creating complex and robust robot behavior across a wide variety of robotic platforms.
+
+Key improvements in ROS 2 over ROS 1 include:
+
+-   **DDS (Data Distribution Service) Integration**: ROS 2 leverages DDS as its underlying communication layer, providing discovery, serialization, and transport without a central daemon (like `roscore` in ROS 1). This enhances reliability, scalability, and real-time performance.
+-   **Quality of Service (QoS) Policies**: DDS allows for configurable QoS settings, enabling developers to fine-tune communication reliability, latency, and bandwidth to suit specific application needs (e.g., reliable vs. best-effort, transient local vs. volatile).
+-   **Multi-Robot Support**: Designed from the ground up to support multiple robots communicating in the same environment, facilitating swarm robotics and industrial automation.
+-   **Security**: DDS provides built-in security features, including authentication, encryption, and access control, crucial for deploying robots in sensitive environments.
+-   **Real-time Capabilities**: Enhanced support for real-time operating systems (RTOS) and deterministic communication patterns, essential for safety-critical applications.
+
+### ROS 2 Architecture Overview
+
+The fundamental architecture of ROS 2 is distributed and peer-to-peer. Instead of a central server, nodes communicate directly using the DDS layer. This architecture provides greater resilience and flexibility.
+
+At a high level, ROS 2 consists of:
+
+1.  **Nodes**: Individual processes that perform computation (e.g., a sensor driver, a motor controller, a planning algorithm).
+2.  **Topics**: Anonymous data streams for one-to-many communication (Publisher-Subscriber pattern).
+3.  **Services**: Synchronous request-response mechanisms for one-to-one communication.
+4.  **Actions**: Asynchronous, long-running goal-oriented tasks with feedback and preemption capabilities.
+5.  **Parameters**: Dynamic configuration values for nodes.
+6.  **Messages**: Data structures used for communication over topics, services, and actions.
+7.  **Launch Files**: XML or Python scripts for starting and managing multiple ROS 2 nodes and configurations.
+
+#### DDS - The Communication Backbone
+
+DDS is an open international standard for real-time systems. In ROS 2, DDS implementations (like eProsima Fast DDS, RTI Connext, Cyclone DDS) handle the complexities of network discovery, data serialization, transport, and Quality of Service (QoS).
+
+Key aspects of DDS in ROS 2:
+
+-   **Discovery**: Participants (nodes) automatically discover each other without manual configuration.
+-   **Data-Centric**: Communication is centered around data objects rather than explicit connections. Publishers declare data types, and subscribers express interest in those types.
+-   **Quality of Service (QoS)**: Developers can specify various QoS policies to control how data is exchanged. Common policies include:
+    -   `Reliability`: `BEST_EFFORT` (fastest, no retransmissions) or `RELIABLE` (guaranteed delivery, with retransmissions).
+    -   `Durability`: `VOLATILE` (data only for active subscribers) or `TRANSIENT_LOCAL` (new subscribers get the last published data).
+    -   `History`: `KEEP_LAST` (only keep a specified number of samples) or `KEEP_ALL` (keep all samples).
+
+### ROS 2 Concepts Explained
+
+#### Nodes
+
+Nodes are the fundamental building blocks of a ROS 2 system. Each node is an executable process that performs a specific task. For example, a robot might have separate nodes for reading laser scan data, controlling motors, and performing path planning.
+
+Nodes are isolated processes, communicating with each other via the DDS layer. This modularity allows for easier development, debugging, and deployment of complex robotic systems.
+
+#### Topics (Publisher-Subscriber Pattern)
+
+Topics are the most common way for nodes to exchange data. They implement a *publisher-subscriber* pattern: a node publishes data to a named topic, and any number of other nodes can subscribe to that topic to receive the data. This is a one-to-many, asynchronous communication mechanism, ideal for continuous streams of data like sensor readings or joint states.
+
+<div align="center">
+  <img src="https://www.example.com/ros2_topic_diagram.png" alt="ROS 2 Topic Communication" width="600" />
+  <em>Figure 1.1: ROS 2 Topic Communication Flow.</em>
+</div>
+
+Each topic has a specific message type associated with it, ensuring that all data published and subscribed to that topic adheres to a predefined structure.
+
+#### Services (Request-Response Pattern)
+
+Services provide a *request-response* mechanism for synchronous, one-to-one communication between nodes. When a client node needs a specific computation performed by a server node, it sends a request and waits for a response. This is suitable for operations that need to complete before the client can proceed, such as triggering an action or querying a specific state.
+
+<div align="center">
+  <img src="https://www.example.com/ros2_service_diagram.png" alt="ROS 2 Service Communication" width="600" />
+  <em>Figure 1.2: ROS 2 Service Communication Flow.</em>
+</div>
+
+Services also define two message types: one for the request and one for the response.
+
+#### Actions (Goal-Feedback-Result Pattern)
+
+Actions are designed for long-running, goal-oriented tasks. They extend the service concept by providing continuous feedback during execution and allowing for preemption (cancelling a goal). An action client sends a goal to an action server, which then provides periodic feedback about the progress and ultimately a result upon completion (or failure).
+
+This pattern is ideal for tasks like navigating to a faraway goal, performing a complex manipulation sequence, or executing a long-duration calibration routine, where intermediate progress updates are valuable.
+
+### Code Example 1.1: Simple Publisher and Subscriber
+
+This example demonstrates the basic Publisher-Subscriber pattern in ROS 2 using Python. We will create two nodes: a `MinimalPublisher` that publishes string messages to a topic, and a `MinimalSubscriber` that subscribes to that topic and prints the received messages.
+
+#### 1.1.1 Publisher Node (`minimal_publisher.py`)
+
+```python
+import rclpy
+from rclpy.node import Node
+
+from std_msgs.msg import String
+
+
+class MinimalPublisher(Node):
+
+    def __init__(self):
+        super().__init__('minimal_publisher')
+        self.publisher_ = self.create_publisher(String, 'topic', 10)
+        timer_period = 0.5  # seconds
+        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.i = 0
+
+    def timer_callback(self):
+        msg = String()
+        msg.data = 'Hello World: %d' % self.i
+        self.publisher_.publish(msg)
+        self.get_logger().info('Publishing: "%s"' % msg.data)
+        self.i += 1
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    minimal_publisher = MinimalPublisher()
+
+    rclpy.spin(minimal_publisher)
+
+    # Destroy the node explicitly
+    # (optional - otherwise it will be done automatically
+    # when the garbage collector destroys the node object)
+    minimal_publisher.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.1.2 Subscriber Node (`minimal_subscriber.py`)
+
+```python
+import rclpy
+from rclpy.node import Node
+
+from std_msgs.msg import String
+
+
+class MinimalSubscriber(Node):
+
+    def __init__(self):
+        super().__init__('minimal_subscriber')
+        self.subscription = self.create_subscription(
+            String,
+            'topic',
+            self.listener_callback,
+            10)
+        self.subscription  # prevent unused variable warning
+
+    def listener_callback(self, msg):
+        self.get_logger().info('I heard: "%s"' % msg.data)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    minimal_subscriber = MinimalSubscriber()
+
+    rclpy.spin(minimal_subscriber)
+
+    # Destroy the node explicitly
+    # (optional - otherwise it will be done automatically
+    # when the garbage collector destroys the node object)
+    minimal_subscriber.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.1.3 Running the Example
+
+To run this example, you would typically place these files in a ROS 2 package, build the package, and then execute the nodes. Here are the simplified steps:
+
+1.  **Create a ROS 2 package**: (Assuming your workspace is `~/ros2_ws/src`)
+    ```bash
+    ros2 pkg create --build-type ament_python my_ros2_package
+    ```
+2.  **Place the Python files**: Create a `my_ros2_package/my_ros2_package` directory and place `minimal_publisher.py` and `minimal_subscriber.py` inside it.
+3.  **Update `setup.py`**: In `my_ros2_package/setup.py`, add the following to the `entry_points` dictionary:
+    ```python
+    entry_points={
+        'console_scripts': [
+            'talker = my_ros2_package.minimal_publisher:main',
+            'listener = my_ros2_package.minimal_subscriber:main',
+        ],
+    },
+    ```
+4.  **Build the package**: From your workspace root (`~/ros2_ws`):
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+5.  **Source the setup files**: In a new terminal:
+    ```bash
+    source install/setup.bash
+    ```
+6.  **Run the publisher**: In the first terminal:
+    ```bash
+    ros2 run my_ros2_package talker
+    ```
+7.  **Run the subscriber**: In a second terminal (after sourcing setup):
+    ```bash
+    ros2 run my_ros2_package listener
+    ```
+
+You will see the publisher printing "Publishing: 'Hello World: X'" and the subscriber printing "I heard: 'Hello World: X'", demonstrating inter-node communication via a topic.
+
+### Code Example 1.2: Simple Service and Client
+
+This example demonstrates the basic Service-Client pattern in ROS 2 using Python. We will create two nodes: a `MinimalService` that provides an addition service, and a `MinimalClient` that requests the service.
+
+#### 1.2.1 Service Definition (`AddTwoInts.srv`)
+
+First, define the service interface. Create a file named `AddTwoInts.srv` in `my_ros2_package/srv/`:
+
+```
+int64 a
+int64 b
+---
+int64 sum
+```
+
+Then, in `my_ros2_package/CMakeLists.txt`, add:
+
+```cmake
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(
+  my_ros2_package
+  "srv/AddTwoInts.srv"
+)
+```
+
+And in `my_ros2_package/package.xml`, add:
+
+```xml
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+```
+
+#### 1.2.2 Service Server Node (`minimal_service.py`)
+
+```python
+import rclpy
+from rclpy.node import Node
+
+from my_ros2_package.srv import AddTwoInts
+
+
+class MinimalService(Node):
+
+    def __init__(self):
+        super().__init__('minimal_service')
+        self.srv = self.create_service(AddTwoInts, 'add_two_ints', self.add_two_ints_callback)
+
+    def add_two_ints_callback(self, request, response):
+        response.sum = request.a + request.b
+        self.get_logger().info('Incoming request: a: %d b: %d' % (request.a, request.b))
+        return response
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    minimal_service = MinimalService()
+
+    rclpy.spin(minimal_service)
+
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.2.3 Service Client Node (`minimal_client.py`)
+
+```python
+import sys
+import rclpy
+from rclpy.node import Node
+
+from my_ros2_package.srv import AddTwoInts
+
+
+class MinimalClientAsync(Node):
+
+    def __init__(self):
+        super().__init__('minimal_client_async')
+        self.cli = self.create_client(AddTwoInts, 'add_two_ints')
+        while not self.cli.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('service not available, waiting again...')
+        self.req = AddTwoInts.Request()
+
+    def send_request(self, a, b):
+        self.req.a = a
+        self.req.b = b
+        self.future = self.cli.call_async(self.req)
+        rclpy.spin_until_future_complete(self, self.future)
+        return self.future.result()
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    minimal_client = MinimalClientAsync()
+    response = minimal_client.send_request(int(sys.argv[1]), int(sys.argv[2]))
+    minimal_client.get_logger().info('Result of add_two_ints: for %d + %d = %d' % (minimal_client.req.a, minimal_client.req.b, response.sum))
+
+    minimal_client.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.2.4 Running the Example
+
+1.  **Build the package**: After defining the service and updating `CMakeLists.txt` and `package.xml`, build your workspace:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+2.  **Source setup files**: In a new terminal:
+    ```bash
+    source install/setup.bash
+    ```
+3.  **Run the service server**: In the first terminal:
+    ```bash
+    ros2 run my_ros2_package minimal_service
+    ```
+4.  **Run the service client**: In a second terminal (after sourcing setup):
+    ```bash
+    ros2 run my_ros2_package minimal_client 5 7
+    ```
+
+The service server will log the incoming request, and the client will print the sum (e.g., "Result of add_two_ints: for 5 + 7 = 12").
+
+### Code Example 1.3: Simple Action Server and Client
+
+This example demonstrates the basic Action Server-Client pattern in ROS 2 using Python. We will create two nodes: an `AveragingActionServer` that averages a stream of numbers, and an `AveragingActionClient` that sends a goal to the server and receives feedback.
+
+#### 1.3.1 Action Definition (`Averaging.action`)
+
+First, define the action interface. Create a file named `Averaging.action` in `my_ros2_package/action/`:
+
+```
+int32 num_samples
+---
+float32 average
+float32 std_dev
+---
+float32 current_average
+```
+
+Then, in `my_ros2_package/CMakeLists.txt`, add:
+
+```cmake
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(
+  my_ros2_package
+  "action/Averaging.action"
+)
+```
+
+And in `my_ros2_package/package.xml`, add:
+
+```xml
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+```
+
+#### 1.3.2 Action Server Node (`averaging_action_server.py`)
+
+```python
+import time
+
+import rclpy
+from rclpy.action import ActionServer
+from rclpy.node import Node
+
+from my_ros2_package.action import Averaging
+
+
+class AveragingActionServer(Node):
+
+    def __init__(self):
+        super().__init__('averaging_action_server')
+        self._action_server = ActionServer(
+            self,
+            Averaging,
+            'averaging',
+            self.execute_callback)
+
+    def execute_callback(self, goal_handle):
+        self.get_logger().info('Executing goal...')
+
+        feedback_msg = Averaging.Feedback()
+        # In a real scenario, you would be processing data from a sensor
+        # For this example, we simulate data and calculate a running average
+        sum_val = 0.0
+        count = 0
+        
+        for i in range(goal_handle.request.num_samples):
+            # Simulate receiving a new data sample
+            new_sample = float(i + 1) # Example data
+            sum_val += new_sample
+            count += 1
+            feedback_msg.current_average = sum_val / count
+            self.get_logger().info(f'Feedback: Current Average: {feedback_msg.current_average}')
+            goal_handle.publish_feedback(feedback_msg)
+            time.sleep(0.5) # Simulate work
+
+        goal_handle.succeed()
+
+        result = Averaging.Result()
+        result.average = sum_val / count
+        # For simplicity, std_dev is not calculated in this example
+        result.std_dev = 0.0 
+        return result
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    averaging_action_server = AveragingActionServer()
+
+    rclpy.spin(averaging_action_server)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.3.3 Action Client Node (`averaging_action_client.py`)
+
+```python
+import rclpy
+from rclpy.action import ActionClient
+from rclpy.node import Node
+
+from my_ros2_package.action import Averaging
+
+
+class AveragingActionClient(Node):
+
+    def __init__(self):
+        super().__init__('averaging_action_client')
+        self._action_client = ActionClient(self, Averaging, 'averaging')
+
+    def send_goal(self, num_samples):
+        goal_msg = Averaging.Goal()
+        goal_msg.num_samples = num_samples
+
+        self._action_client.wait_for_server()
+
+        self.get_logger().info('Sending goal...')
+        self._send_goal_future = self._action_client.send_goal_async(goal_msg, feedback_callback=self.feedback_callback)
+
+        self._send_goal_future.add_done_callback(self.goal_response_callback)
+
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().info('Goal rejected :(')
+            return
+
+        self.get_logger().info('Goal accepted :)')
+
+        self._get_result_future = goal_handle.get_result_async()
+        self._get_result_future.add_done_callback(self.get_result_callback)
+
+    def get_result_callback(self, future):
+        result = future.result().result
+        self.get_logger().info(f'Result: Average = {result.average}, Std Dev = {result.std_dev}')
+        rclpy.shutdown()
+
+    def feedback_callback(self, feedback_msg):
+        self.get_logger().info(f'Received feedback: Current Average = {feedback_msg.feedback.current_average}')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    action_client = AveragingActionClient()
+    action_client.send_goal(10) # Request to average 10 samples
+
+    rclpy.spin(action_client)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 1.3.4 Running the Example
+
+1.  **Build the package**: After defining the action and updating `CMakeLists.txt` and `package.xml`, build your workspace:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+2.  **Source setup files**: In a new terminal:
+    ```bash
+    source install/setup.bash
+    ```
+3.  **Run the action server**: In the first terminal:
+    ```bash
+    ros2 run my_ros2_package averaging_action_server
+    ```
+4.  **Run the action client**: In a second terminal (after sourcing setup):
+    ```bash
+    ros2 run my_ros2_package averaging_action_client
+    ```
+
+You will see the action client sending a goal, the action server providing continuous feedback on the current average, and finally the client receiving the final result (average and standard deviation).
+
+### Diagram 1.3: ROS 2 Architecture Overview
+
+```mermaid
+graph LR
+    A[Robot Hardware] --> B(Sensor Drivers)
+    B --> C(Perception Nodes)
+    C --> D(Localization & Mapping Nodes)
+    D --> E(Planning Nodes)
+    E --> F(Control Nodes)
+    F --> A
+    subgraph ROS 2 Nodes
+        B
+        C
+        D
+        E
+        F
+    end
+    subgraph Communication
+        G[DDS (Data Distribution Service)]
+    end
+    subgraph Tools
+        H[Rviz]
+        I[RQT]
+    end
+    B -- Publishes Sensor Data --> G
+    G -- Distributes Data --> C
+    C -- Publishes Processed Data --> G
+    G -- Distributes Data --> D
+    D -- Publishes Pose Estimates --> G
+    G -- Distributes Data --> E
+    E -- Publishes Trajectories --> G
+    G -- Distributes Commands --> F
+    H -- Visualizes Data --> G
+    I -- Introspects Data --> G
+```
+
+<div align="center">
+  <img src="https://www.example.com/ros2_nodetree_diagram.png" alt="ROS 2 Node Tree Communication" width="600" />
+  <em>Figure 1.4: ROS 2 Node Tree Communication.</em>
+</div>
+
+## Hands-on Exercises
+
+### Exercise 1.1: Implement a Simple ROS 2 Node
+
+**Goal**: Create a new ROS 2 Python package and implement a simple node that publishes a custom string message to a topic. Then, create another node that subscribes to this topic and prints the received messages. This exercise reinforces the Publisher-Subscriber pattern.
+
+**Expected Output**: The subscriber node should continuously print the custom messages published by your publisher node.
+
+1.  **Create a new ROS 2 package**: In your `ros2_ws/src` directory, create a new Python package named `my_custom_msgs`:
+    ```bash
+    ros2 pkg create --build-type ament_python my_custom_msgs
+    ```
+2.  **Define a custom message**: Create a file `my_custom_msgs/msg/CustomString.msg` with the following content:
+    ```
+    string data
+    float64 timestamp
+    ```
+3.  **Update `CMakeLists.txt` and `package.xml`**: Modify `my_custom_msgs/CMakeLists.txt` and `my_custom_msgs/package.xml` to build your custom message. (Refer to ROS 2 documentation for detailed steps on custom message building if needed).
+4.  **Create a custom publisher node**: In `my_custom_msgs/my_custom_msgs/custom_publisher_node.py`, implement a node that publishes `CustomString` messages to a topic (e.g., `/custom_chatter`).
+5.  **Create a custom subscriber node**: In `my_custom_msgs/my_custom_msgs/custom_subscriber_node.py`, implement a node that subscribes to `/custom_chatter` and prints the `data` and `timestamp` from the received `CustomString` messages.
+6.  **Update `setup.py`**: Add entry points for your new publisher and subscriber nodes in `my_custom_msgs/setup.py`.
+7.  **Build your workspace** and then run your publisher and subscriber nodes in separate terminals.
+
+### Exercise 1.2: Modify Existing Node Functionality
+
+**Goal**: Take the `minimal_publisher.py` from Code Example 1.1 and modify it to publish messages at a variable rate, toggling between fast and slow publication every 10 messages. Also, modify `minimal_subscriber.py` to filter messages, only processing those that contain the word "Urgent".
+
+**Expected Output**:
+-   The publisher's output rate should visibly change (e.g., faster for 10 messages, then slower for 10, then faster, etc.).
+-   The subscriber should only print messages from the publisher that include "Urgent" in their data field.
+
+1.  **Modify `minimal_publisher.py`**:
+    -   Introduce a counter that, every 10 messages, switches the `timer_period` between 0.1 seconds (fast) and 1.0 second (slow).
+    -   Every 5 messages, prepend the string "Urgent: " to the message data.
+2.  **Modify `minimal_subscriber.py`**:
+    -   Inside the `listener_callback`, add a conditional check to only process and log messages where `msg.data` contains the substring "Urgent".
+3.  **Rebuild and run** your modified publisher and subscriber to observe the changes.
+
+## Summary & Further Reading
+
+### Summary
+
+This chapter provided a foundational understanding of ROS 2, covering its architecture, core communication patterns (Nodes, Topics, Services, Actions), and underlying DDS integration. We explored the distinctions and appropriate use cases for Publisher-Subscriber, Request-Response, and Goal-Feedback-Result communication, reinforcing these concepts with practical Python code examples. Understanding these primitives is crucial for building modular, robust, and scalable robotic systems with ROS 2.
+
+### Further Reading
+
+-   [1] R. J. R. B. P. the Open Robotics, "ROS 2 Documentation," *ROS 2 Documentation*. Available: https://docs.ros.org/
+-   [2] "DDS Specification," *Object Management Group*. Available: https://www.omg.org/spec/DDS/
+-   [3] M. Y. e. a. P. S. S. S. a. R. J. R. B. P. T. Open Robotics, "About ROS 2 QoS Settings," *ROS 2 Documentation*. Available: https://docs.ros.org/en/jazzy/Concepts/About-Quality-of-Service-Settings.html

@@ -1,0 +1,520 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Advanced Gazebo: Custom Sensors and Environment Interaction
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+-   Design and implement custom Gazebo sensor plugins.
+-   Integrate custom sensors into URDF/SDF robot models.
+-   Interact with and modify Gazebo environments programmatically.
+-   Simulate dynamic obstacles and complex environmental features.
+-   Understand advanced topics like multi-robot simulation and distributed Gazebo.
+-   Analyze and interpret data from custom simulated sensors.
+
+## Core Theory
+
+### Custom Gazebo Plugins: Extending Functionality
+
+Gazebo's powerful plugin architecture allows users to extend its core functionality without modifying the simulator's source code. Plugins are shared libraries (`.so` files on Linux, `.dll` on Windows) that are loaded at runtime and can interact with various aspects of the simulation, such as models, sensors, the physics engine, and the world itself. This flexibility is crucial for developing custom sensors, specialized robot behaviors, or unique environmental interactions not provided by default.
+
+**Types of Gazebo Plugins:**
+
+-   **World Plugins**: Affect the entire simulation world. Useful for global events, custom physics, or managing multiple robots.
+-   **Model Plugins**: Attached to specific models (e.g., a robot). Can control joints, read link states, or implement custom behaviors for the model.
+-   **Sensor Plugins**: Specialized model plugins that interface with Gazebo's sensor framework to generate custom sensor data (e.g., a novel type of camera, a specialized force-torque sensor).
+-   **System Plugins**: Low-level plugins that hook into Gazebo's core event loop, often used for debugging or advanced system-wide modifications.
+
+### Developing a Custom Sensor Plugin
+
+Creating a custom sensor plugin typically involves a few key steps:
+
+1.  **Define the Sensor Logic**: Determine what kind of data your sensor will produce, how it will interact with the simulated environment, and what physics properties it might depend on.
+2.  **Choose a Base Class**: Gazebo provides base classes for different plugin types (e.g., `WorldPlugin`, `ModelPlugin`, `SensorPlugin`). For a custom sensor, you'll often derive from `SensorPlugin` or directly interact with sensor data within a `ModelPlugin`.
+3.  **Implement the `Load` Method**: This method is called when the plugin is loaded. It's where you'll parse SDF parameters, get references to Gazebo entities (like the parent sensor or model), and set up communication interfaces (e.g., ROS 2 publishers).
+4.  **Implement Update Loops**: Sensors typically require continuous updates. You'll connect to Gazebo's `Update` events (e.g., `physics::World::Sigc_WorldUpdateStart` or `Sensor::Update`) to periodically read simulation data, process it, and publish your custom sensor output.
+5.  **Compile the Plugin**: Plugins are compiled as shared libraries using `CMake`. You'll need to link against Gazebo's libraries (e.g., `gazebo::sensors`, `gazebo::physics`).
+6.  **Integrate into SDF/URDF**: Once compiled, the plugin needs to be specified in the robot's URDF (using `<gazebo>` tags) or the world's SDF file, along with any parameters it expects.
+
+### Programmatic Environment Interaction
+
+Beyond plugins, Gazebo offers several ways to interact with and modify the simulation environment programmatically:
+
+-   **Gazebo Transport**: This is Gazebo's internal communication library, similar to ROS topics/services but native to Gazebo. You can publish and subscribe to Gazebo messages (e.g., `/gazebo/default/model/pose/modify` to change a model's pose, or `/gazebo/default/factory` to spawn new models).
+-   **ROS 2 Bridges**: The `ros_gz_sim` package (or `ros_gz_bridge` in older versions) provides a set of nodes to bridge Gazebo Transport topics and services to ROS 2. This allows you to control Gazebo models, spawn/delete entities, or read Gazebo-native sensor data directly from ROS 2 nodes.
+-   **Python Scripting (within Isaac Sim)**: While Gazebo Classic primarily uses C++ for plugins, NVIDIA Isaac Sim (which leverages Gazebo for certain aspects) offers extensive Python scripting capabilities for environment creation, modification, and control. This will be covered in more detail in Module 3.
+
+These methods enable dynamic changes to the simulation, such as moving objects, changing environmental conditions, or even generating new scenarios on the fly, which is crucial for advanced testing and reinforcement learning applications.
+
+### Code Example 2.2.1: Custom Distance Sensor Plugin
+
+This example demonstrates how to create a simple custom Gazebo sensor plugin in C++. Our plugin will simulate a basic distance sensor that publishes the distance to the closest object in front of it to a Gazebo Transport topic.
+
+#### 2.2.1.1 Custom Sensor Plugin (`custom_distance_sensor.cc`)
+
+Create a file named `custom_distance_sensor.cc` in your Gazebo plugin development directory (e.g., `~/gazebo_plugins_ws/src/custom_distance_sensor/src/custom_distance_sensor.cc`):
+
+```cpp
+#include <gazebo/gazebo.hh>
+#include <gazebo/physics/physics.hh>
+#include <gazebo/sensors/sensors.hh>
+#include <gazebo/transport/transport.hh>
+#include <gazebo/msgs/msgs.hh>
+
+#include <thread>
+
+namespace gazebo
+{
+  class CustomDistanceSensor : public SensorPlugin
+  {
+    /// \brief Pointer to the parent sensor
+    private sensors::RaySensorPtr parentSensor;
+
+    /// \brief Pointer to the Gazebo world.
+    private physics::WorldPtr world;
+
+    /// \brief A Gazebo communication node.
+    private transport::NodePtr node;
+
+    /// \brief A Gazebo publisher for the custom distance data.
+    private transport::PublisherPtr distancePub;
+
+    /// \brief Pointer to the update event connection
+    private event::ConnectionPtr updateConnection;
+
+    /// \brief Custom topic name to publish distance data
+    private std::string topic_name = "~/custom_distance";
+
+    public CustomDistanceSensor() : SensorPlugin()
+    {
+    }
+
+    public void Load(sensors::SensorPtr _sensor, sdf::ElementPtr _sdf)
+    {
+      // Get the parent sensor.
+      this->parentSensor = std::dynamic_pointer_cast<sensors::RaySensor>(_sensor);
+
+      // Make sure the parent sensor is valid.
+      if (!this->parentSensor)
+      {
+        gzerr << "CustomDistanceSensor requires a RaySensor.\n";
+        return;
+      }
+
+      // Get a pointer to the world
+      this->world = physics::get_world(this->parentSensor->WorldName());
+
+      // Create a Gazebo transport node
+      this->node = transport::NodePtr(new transport::Node());
+      this->node->Init(this->parentSensor->WorldName());
+
+      // Create a publisher for our custom distance topic
+      this->distancePub = this->node->Advertise<msgs::Any>(this->topic_name);
+
+      // Listen to the update event. This event is broadcast every simulation iteration.
+      this->updateConnection = this->parentSensor->ConnectUpdated(std::bind(&CustomDistanceSensor::OnUpdate, this));
+
+      // Activate the sensor
+      this->parentSensor->SetActive(true);
+
+      gzmsg << "CustomDistanceSensor loaded successfully! Publishing on topic [" << this->topic_name << "]\n";
+    }
+
+    // Called by the world update start event
+    public void OnUpdate()
+    {
+      if (!this->parentSensor)
+        return;
+
+      // Get the laser scans
+      unsigned int num_beams = this->parentSensor->RayCount();
+      unsigned int num_ranges = this->parentSensor->RangeCount();
+
+      if (num_beams == 0 || num_ranges == 0)
+        return;
+
+      double min_range = this->parentSensor->RangeMin();
+      double max_range = this->parentSensor->RangeMax();
+
+      // We are simulating a simple front-facing distance sensor
+      // Get the range from the middle beam (or first if only one)
+      double distance = this->parentSensor->Range(num_beams / 2);
+
+      // Publish the distance
+      msgs::Any msg;
+      msg.set_type(msgs::Any::DOUBLE);
+      msg.set_double_value(distance);
+      this->distancePub->Publish(msg);
+
+      // gzdbg << "Published distance: " << distance << "\n";
+    }
+  };
+
+  GZ_REGISTER_SENSOR_PLUGIN(CustomDistanceSensor)
+}
+```
+
+#### 2.2.1.2 CMakeLists.txt for the Plugin
+
+Create a `CMakeLists.txt` in your plugin directory (`~/gazebo_plugins_ws/src/custom_distance_sensor/CMakeLists.txt`):
+
+```cmake
+cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
+
+project(custom_distance_sensor)
+
+find_package(gazebo REQUIRED)
+
+include_directories(${GAZEBO_INCLUDE_DIRS})
+link_directories(${GAZEBO_LIBRARY_DIRS})
+
+add_library(${PROJECT_NAME} SHARED src/custom_distance_sensor.cc)
+target_link_libraries(${PROJECT_NAME} ${GAZEBO_LIBRARIES})
+```
+
+#### 2.2.1.3 Building and Installing the Plugin
+
+1.  **Set up a Catkin/Colcon workspace** (or a simple CMake project):
+    ```bash
+    mkdir -p ~/gazebo_plugins_ws/src
+    cd ~/gazebo_plugins_ws/src
+    # Place custom_distance_sensor directory here
+    ```
+2.  **Compile the plugin**:
+    ```bash
+    cd ~/gazebo_plugins_ws
+    # For Catkin
+    catkin_make
+    # For Colcon
+    colcon build
+    ```
+    This will generate `libcustom_distance_sensor.so` (or `.dll` on Windows) in your `devel/lib` or `install/lib` directory.
+
+3.  **Ensure Gazebo can find your plugin**: Add the path to your compiled plugin to the `GAZEBO_PLUGIN_PATH` environment variable. For example, if you used `colcon build`:
+    ```bash
+    export GAZEBO_PLUGIN_PATH=$GAZEBO_PLUGIN_PATH:~/gazebo_plugins_ws/install/lib
+    ```
+    It's recommended to add this line to your `~/.bashrc` (or `~/.zshrc`) file for persistence.
+
+#### 2.2.1.4 Integrating the Custom Sensor into an SDF Model
+
+Now, let's integrate this custom distance sensor into a simple box model using SDF. Create or modify an SDF file (e.g., `my_custom_robot.sdf`):
+
+```xml
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="my_custom_robot">
+    <link name="base_link">
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.166667</ixx>
+          <iyy>0.166667</iyy>
+          <izz>0.166667</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <box>
+            <size>0.2 0.2 0.2</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.0 0.0 1.0 1.0</ambient>
+          <diffuse>0.0 0.0 1.0 1.0</diffuse>
+          <specular>0.0 0.0 1.0 1.0</specular>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <box>
+            <size>0.2 0.2 0.2</size>
+          </box>
+        </geometry>
+      </collision>
+
+      <!-- Attach a ray sensor (required for our custom plugin) -->
+      <sensor name="ray_sensor" type="ray">
+        <pose>0.1 0 0 0 0 0</pose> <!-- Position the sensor in front of the box -->
+        <visualize>true</visualize>
+        <update_rate>10.0</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.1</min>
+            <max>10.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </ray>
+        <!-- Our custom plugin -->
+        <plugin name="custom_distance_sensor_plugin" filename="libcustom_distance_sensor.so"/>
+      </sensor>
+
+    </link>
+  </model>
+</sdf>
+```
+
+#### 2.2.1.5 Running the Custom Sensor
+
+1.  **Launch Gazebo with your custom robot**: If you have a `my_custom_robot.sdf` file (as shown above), you can launch it directly:
+    ```bash
+    gazebo my_custom_robot.sdf
+    ```
+    Alternatively, if you're spawning it via ROS 2, modify your spawner node (from Chapter 2.1) to load `my_custom_robot.sdf` instead of `box.sdf`.
+
+2.  **Observe Gazebo Transport topic**: In a new terminal, listen to the custom topic:
+    ```bash
+    gz topic list | grep custom_distance
+    # Expected output: /gazebo/default/custom_distance
+
+    gz topic echo /gazebo/default/custom_distance
+    ```
+
+    As you move objects in front of your robot in Gazebo, you should see the distance values being published on the `/gazebo/default/custom_distance` topic. This demonstrates a working custom sensor plugin!
+
+### Code Example 2.2.2: Programmatic Model Movement
+
+This example demonstrates how to programmatically move an existing model in Gazebo using a ROS 2 Python node. We will use the `SetEntityState` service from `gazebo_msgs` to continuously update the pose of a target model, making it move in a circular path.
+
+**Prerequisites**: A Gazebo simulation must be running with a model present (e.g., `my_spawned_box` from Chapter 2.1 or `my_custom_robot` from the previous example).
+
+#### 2.2.2.1 Model Mover Node (`model_mover.py`)
+
+Create a Python file named `model_mover.py` in your ROS 2 package (e.g., `my_ros2_package/my_ros2_package/model_mover.py`):
+
+```python
+import rclpy
+from rclpy.node import Node
+from gazebo_msgs.srv import SetEntityState
+from gazebo_msgs.msg import EntityState
+from geometry_msgs.msg import Pose, Twist
+import math
+import time
+
+
+class ModelMover(Node):
+
+    def __init__(self):
+        super().__init__('model_mover')
+        self.client = self.create_client(SetEntityState, 'set_entity_state')
+
+        while not self.client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('SetEntityState service not available, waiting again...')
+
+        self.timer_period = 0.1  # seconds
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
+
+        self.model_name = 'my_spawned_box'  # or 'my_custom_robot'
+        self.radius = 1.0
+        self.angular_velocity = 0.5 # rad/s
+        self.start_time = self.get_clock().now().nanoseconds / 1e9
+        self.get_logger().info(f'Model Mover Node Started. Moving {self.model_name} in a circle.')
+
+    def timer_callback(self):
+        current_time = self.get_clock().now().nanoseconds / 1e9 - self.start_time
+
+        # Calculate new position for circular motion
+        x = self.radius * math.cos(self.angular_velocity * current_time)
+        y = self.radius * math.sin(self.angular_velocity * current_time)
+        z = 0.5 # Keep Z constant
+
+        # Calculate orientation to face along the tangent (simplified for 2D)
+        yaw = self.angular_velocity * current_time + math.pi / 2.0 # Rotate to face tangent
+        
+        request = SetEntityState.Request()
+        entity_state = EntityState()
+        entity_state.name = self.model_name
+        entity_state.reference_frame = 'world' # or 'map' if using a map frame
+
+        pose = Pose()
+        pose.position.x = x
+        pose.position.y = y
+        pose.position.z = z
+
+        # Convert yaw to quaternion
+        pose.orientation.x = 0.0
+        pose.orientation.y = 0.0
+        pose.orientation.z = math.sin(yaw / 2)
+        pose.orientation.w = math.cos(yaw / 2)
+        
+        entity_state.pose = pose
+        request.state = entity_state
+
+        self.future = self.client.call_async(request)
+        self.future.add_done_callback(self.response_callback)
+
+    def response_callback(self, future):
+        try:
+            response = future.result()
+            if not response.success:
+                self.get_logger().warn(f'Failed to set state for {self.model_name}: {response.status_message}')
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    model_mover_node = ModelMover()
+    rclpy.spin(model_mover_node)
+    model_mover_node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+#### 2.2.2.2 Running the Example
+
+1.  **Launch Gazebo**: Start a Gazebo world with a model named `my_spawned_box` or `my_custom_robot` already present. You can use the spawner nodes from Chapter 2.1 or 2.2, or manually insert a model and rename it.
+    ```bash
+    gazebo
+    # Then spawn a model via ROS 2 or GUI
+    ```
+
+2.  **Ensure `gazebo_ros_pkgs` is installed and running**: The `SetEntityState` service is provided by `gazebo_ros_pkgs`. Make sure your ROS 2 environment is set up correctly.
+    ```bash
+    sudo apt install ros-jazzy-gazebo-ros-pkgs # Adjust ROS distribution as needed
+    ```
+
+3.  **Place the Python file**: Place `model_mover.py` in your ROS 2 package (e.g., `my_ros2_package/my_ros2_package/`).
+
+4.  **Update `setup.py`**: Add the new node to the `entry_points` in `my_ros2_package/setup.py`:
+    ```python
+    entry_points={
+        'console_scripts': [
+            # ... existing entries ...
+            'model_mover = my_ros2_package.model_mover:main',
+        ],
+    },
+    ```
+
+5.  **Rebuild the package**:
+    ```bash
+    colcon build --packages-select my_ros2_package
+    ```
+
+6.  **Source the setup files**:
+    ```bash
+    source install/setup.bash
+    ```
+
+7.  **Run the model mover node**: In a terminal:
+    ```bash
+    ros2 run my_ros2_package model_mover
+    ```
+
+**Expected behavior**: The target model (`my_spawned_box` or `my_custom_robot`) in Gazebo should begin moving in a circular path, demonstrating how to dynamically modify environmental elements using ROS 2 services.     You can change `self.model_name` in the `ModelMover` class to target a different model if desired.
+
+### Diagram 2.2.1: Custom Sensor Data Flow
+
+```mermaid
+graph TD
+    A[Gazebo Physics Engine] --> B{Simulated Environment}
+    B --> C[RaySensor (in SDF Model)]
+    C -- Raw Data --> D{CustomDistanceSensor Plugin}
+    D -- Processed Data --> E[Gazebo Transport Node]
+    E -- Publish --> F[/gazebo/default/custom_distance Topic]
+    F --> G[gz topic echo / ROS 2 Subscriber]
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style C fill:#f9f,stroke:#333,stroke-width:2px
+    style D fill:#ccf,stroke:#333,stroke-width:2px
+    style E fill:#fcf,stroke:#333,stroke-width:2px
+    style F fill:#dfd,stroke:#333,stroke-width:2px
+```
+
+## Hands-on Exercise 2.2.1: Enhancing the Custom Distance Sensor
+
+**Goal**: Modify the custom distance sensor plugin to publish more detailed information (e.g., minimum and maximum range), recompile it, and verify the updated output in Gazebo.
+
+1.  **Modify `custom_distance_sensor.cc`**:
+    Open `custom_distance_sensor.cc` and:
+    -   Change the `topic_name` to something like `~/custom_distance_extended`.
+    -   Modify the `OnUpdate` method to publish the `min_range`, `max_range`, and the `distance` (from the middle beam) in a more structured message. You might consider using a custom Gazebo message type if you want to publish multiple values in a single message, or publish each value on a separate topic.
+    -   For simplicity in this exercise, let's publish `min_range` and `max_range` as separate `msgs::Any` messages, similar to how `distance` is published.
+
+    ```cpp
+    // ... (inside OnUpdate method)
+
+    // Publish the distance
+    msgs::Any dist_msg;
+    dist_msg.set_type(msgs::Any::DOUBLE);
+    dist_msg.set_double_value(distance);
+    this->distancePub->Publish(dist_msg);
+
+    // Publish min_range (example)
+    msgs::Any min_range_msg;
+    min_range_msg.set_type(msgs::Any::DOUBLE);
+    min_range_msg.set_double_value(min_range);
+    this->node->Advertise<msgs::Any>("~/custom_min_range")->Publish(min_range_msg);
+
+    // Publish max_range (example)
+    msgs::Any max_range_msg;
+    max_range_msg.set_type(msgs::Any::DOUBLE);
+    max_range_msg.set_double_value(max_range);
+    this->node->Advertise<msgs::Any>("~/custom_max_range")->Publish(max_range_msg);
+
+    // ... (rest of the OnUpdate method)
+    ```
+
+2.  **Recompile the plugin**:
+    Navigate to your `~/gazebo_plugins_ws` directory and recompile your plugin:
+    ```bash
+    colcon build --packages-select custom_distance_sensor
+    # Or catkin_make if you are using catkin
+    ```
+
+3.  **Source environment and run simulation**:
+    Ensure your `GAZEBO_PLUGIN_PATH` is correctly set (as in Code Example 2.2.1) and launch Gazebo with your model that integrates the custom sensor:
+    ```bash
+    source ~/gazebo_plugins_ws/install/setup.bash # If using colcon
+    gazebo my_custom_robot.sdf
+    ```
+
+4.  **Verify updated topics**:
+    In a new terminal, check the available Gazebo Transport topics and echo the new topics to see the published data:
+    ```bash
+    gz topic list
+    gz topic echo /gazebo/default/custom_distance_extended
+    gz topic echo /gazebo/default/custom_min_range
+    gz topic echo /gazebo/default/custom_max_range
+    ```
+
+    **Expected behavior**: You should see the new topics listed and publishing the `min_range` and `max_range` values, alongside the `distance`, demonstrating your successful modification and recompilation of the custom sensor plugin.
+
+## Summary & Further Reading
+
+In this chapter, we explored advanced topics in Gazebo simulation, focusing on extending its capabilities through custom plugins and programmatic environment interaction. You learned how to develop a custom C++ sensor plugin, integrate it into an SDF model, and observe its data using Gazebo Transport. We also demonstrated how to dynamically modify the simulation environment by moving models programmatically using ROS 2 services.
+
+**Key Takeaways:**
+
+-   Gazebo's plugin architecture allows for extensive customization of sensors, models, and world behavior.
+-   Custom C++ plugins enable specialized sensor data generation and complex model interactions.
+-   Gazebo Transport and ROS 2 bridges provide powerful means to interact with and modify the simulation environment programmatically.
+
+**Further Reading:**
+
+-   **Gazebo Plugins Tutorial**: [https://classic.gazebosim.org/tutorials?tut=plugins_hello_world](https://classic.gazebosim.org/tutorials?tut=plugins_hello_world)
+-   **Gazebo Sensors Tutorial**: [https://classic.gazebosim.org/tutorials?tut=sensors_development](https://classic.gazebosim.org/tutorials?tut=sensors_development)
+-   **Gazebo Transport**: [https://gazebosim.org/docs/harmonic/transport](https://gazebosim.org/docs/harmonic/transport)
+-   **`ros_gz_sim` Documentation**: [https://github.com/ros-gazebosim/ros_gz](https://github.com/ros-gazebosim/ros_gz)
