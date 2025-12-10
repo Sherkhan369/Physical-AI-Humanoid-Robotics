@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: 'Physical AI: Bridging the Digital and Real Worlds through Robotics',
+  title: 'Physical AI & Robotics',
 
   favicon: 'img/favicon.ico',
 
@@ -50,18 +50,20 @@ const config: Config = {
         },
       } satisfies Preset.Options,
     ],
+    
   ],
-
   themeConfig: {
     image: 'img/docusaurus-social-card.jpg',
     colorMode: {
-      respectPrefersColorScheme: true,
-    },
+    defaultMode: 'dark',
+    disableSwitch: false, // Allows users to toggle if desired
+    respectPrefersColorScheme: false, // Ignore system preference
+  },
     navbar: {
       title: 'Physical AI Robotics',
       logo: {
         alt: 'My Site Logo',
-        src: 'img/logo.svg',
+        src: 'img/header.svg',
       },
       items: [
         {
@@ -72,7 +74,7 @@ const config: Config = {
         },
         {to: '/blog', label: 'Blog', position: 'left'},
         {
-          href: 'https://github.com/facebook/docusaurus',
+          href: 'https://github.com/Sherkhan369?tab=repositories',
           label: 'GitHub',
           position: 'right',
         },

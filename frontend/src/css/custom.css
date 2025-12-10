@@ -1,30 +1,79 @@
-/**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
- */
-
-/* You can override the default Infima variables here. */
+/* Global overrides */
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-color-primary: #00b8d4; /* Cyan primary color for links/buttons */
+  --ifm-color-primary-dark: #00a5bf;
+  --ifm-color-primary-darker: #009cb5;
+  --ifm-color-primary-darkest: #008196;
+  --ifm-color-primary-light: #33c5dc;
+  --ifm-color-primary-lighter: #4dcee1;
+  --ifm-color-primary-lightest: #80dbe9;
+  --ifm-font-color-base: #ffffff; /* White text */
+  --ifm-background-color: #001d35; /* Dark navy background */
+  --ifm-navbar-background-color: #001d35;
+  --ifm-footer-background-color: #001d35;
+  --ifm-hero-background-color: #001d35;
+  --ifm-heading-color: #ffffff;
+  --ifm-menu-color: #d1d5db; /* Light gray for menus */
   --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; /* System fonts like screenshot */
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
+/* Dark mode specifics (since default is dark) */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-background-color: #001d35;
+  --ifm-font-color-base: #ffffff;
+  --ifm-link-color: #00b8d4;
+  --ifm-hover-overlay: rgba(255, 255, 255, 0.05);
+}
+
+/* Navbar styles */
+.navbar {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1); /* Subtle border */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* Slight shadow */
+  border-radius: 0 0 10px 10px; /* Rounded bottom corners like screenshot */
+}
+
+.navbar__title {
+  color: #ffffff; /* White title */
+  font-weight: bold;
+}
+
+.navbar__item {
+  color: #d1d5db; /* Light gray links */
+}
+
+.navbar__item:hover {
+  color: #ffffff;
+}
+
+/* Hero section overrides */
+.hero {
+  padding: 4rem 0;
+  text-align: left;
+}
+
+.hero__title {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.hero__subtitle {
+  font-size: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.button--secondary {
+  background-color: #00b8d4 !important;
+  color: #001d35 !important;
+  border: none;
+  border-radius: 5px;
+}
+
+.button--secondary:hover {
+  background-color: #33c5dc !important;
+}
+
+/* Other elements (e.g., for rounded search if added) */
+.theme-doc-search {
+  border-radius: 20px; /* If you add search */
 }
